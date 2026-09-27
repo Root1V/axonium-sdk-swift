@@ -18,6 +18,21 @@
 
 Everything is `Sendable` and builds under Swift 6 strict concurrency with no warnings.
 
+### Corrected
+
+**The separate repository is a decision, not a constraint, and M0 shipped saying otherwise.**
+
+`Package.swift` and `README.md` both claimed SwiftPM left no choice. What SwiftPM actually forbids
+is a manifest in a subdirectory — a `swift/Package.swift` beside `go/` cannot be consumed. A
+manifest at the monorepo *root* with `path: "swift/Sources/Axonium"` resolves and builds; measured
+by doing it. The earlier reasoning assumed `from: "0.1.0"` would resolve to the legacy `v0.6.0`,
+which mistakes "highest tag that exists today" for "highest tag in the range": publishing the
+Swift package publishes a higher tag, and that is the one that wins.
+
+The decision stands on reasons that survive: it is the reversible direction, the monorepo's bare
+tag line is shared with the legacy Python releases, and a consumer vendors the whole tree. Those
+are in README.md now, in place of the claim that there was no alternative.
+
 ### Found while building it
 
 **A behaviour the three existing SDKs fixed is pinned by nothing.**

@@ -14,14 +14,42 @@ watchOS.
 ## Why this is a separate repository
 
 The other three SDKs live together in [`Root1V/axonium-sdk`](https://github.com/Root1V/axonium-sdk),
-under `python/`, `go/` and `rust/`. Swift does not join them, and the reason is the resolver
-rather than a preference.
+under `python/`, `go/` and `rust/`. Swift does not, and this is a **decision** rather than a
+constraint — which is worth saying plainly, because the first version of this file claimed the
+resolver left no choice and that was not true.
 
-SwiftPM resolves a dependency's version from **bare semver tags only** — it does not read the
-`python/vX.Y.Z` or `go/vX.Y.Z` prefixes the monorepo uses. The monorepo's bare tags `v0.1.0`
-through `v0.6.0` belong to the *legacy* Python SDK, the one that predates the rewrite. A
-`from: "0.1.0"` against that repository resolves to `v0.6.0`: `main.py`, `pyproject.toml`, `src/`,
-and no Swift at all.
+**What the resolver does forbid** is the shape you would expect: a `swift/Package.swift` beside
+`go/`. SwiftPM cannot consume a package that lives in a subdirectory of a repository.
+
+```
+.package(url: ".../axonium-sdk.git", from: "0.1.0")
+  error: the package manifest at '/Package.swift' cannot be accessed
+```
+
+**What it permits**, and what the earlier claim missed: a manifest at the monorepo *root* with
+`path: "swift/Sources/Axonium"`. That resolves and builds. `from: "0.1.0"` means
+`>= 0.1.0, < 1.0.0` and SwiftPM takes the highest tag in range — which, once the Swift package is
+published, is the Swift one and not the legacy `v0.6.0`.
+
+So the reasons are these, and none of them is impossibility.
+
+**It is the reversible choice.** Moving from a separate repository into the monorepo later is
+copying files and adding a root manifest. Moving the other way is not: by then the bare semver
+tag line has been spent on Swift releases, and it cannot be reclaimed without deleting published
+tags.
+
+**One failure mode exists only in the monorepo.** Its bare tags `v0.1.0` through `v0.6.0` belong
+to the *legacy* Python SDK, the one that predates the rewrite. Sharing that line with Swift means
+anyone pinning inside it gets the old tree and a hard error:
+
+```
+.upToNextMinor(from: "0.6.0")
+  error: the package manifest at '/Package.swift' cannot be accessed
+```
+
+**And a consumer vendors what it depends on.** A monorepo dependency puts 3.0 MB of working tree
+and 11 MB of git objects into an app's `.build`, of which the Swift part is 4 KB. The size is not
+the argument; what an App Store binary's dependency graph contains is.
 
 ## The contract lives in one place
 
