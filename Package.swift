@@ -6,10 +6,11 @@ import PackageDescription
 // written down, and the whole reason this SDK can claim parity with Python, Go and Rust is that
 // all four replay the same bytes.
 //
-// SwiftPM resolves a dependency's version from bare semver tags only. The monorepo's bare tags
-// `v0.1.0`..`v0.6.0` belong to the legacy Python SDK, so `from: "0.1.0"` against that repository
-// would resolve to a package with no Swift in it at all. That is what forced this into its own
-// repository -- the resolver, not a preference.
+// This is its own repository by choice, and README.md gives the reasons. The first version of
+// this comment claimed the resolver forced it; that was wrong. SwiftPM cannot consume a package
+// living in a subdirectory, so a `swift/Package.swift` beside `go/` is genuinely impossible --
+// but a manifest at the monorepo ROOT with `path: "swift/Sources/Axonium"` resolves and builds.
+// Measured before believing it, and after having claimed the opposite.
 let package = Package(
     name: "Axonium",
     platforms: [
