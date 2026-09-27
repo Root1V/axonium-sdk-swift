@@ -1,0 +1,120 @@
+import Foundation
+
+/// The rate-limit budget as of one response.
+///
+/// `scope` names *which* budget the numbers describe. There is more than one -- `chat_completions`,
+/// `embeddings`, `rerank`, `predict` and `default` -- so a single "last seen" slot would end up
+/// holding whichever endpoint answered last while looking entirely plausible. Key it before you
+/// cache it.
+public struct RateLimitSnapshot: Sendable, Hashable {
+    public var scope: String?
+    public var limitRequests: Int?
+    public var remainingRequests: Int?
+    public var resetRequests: Int?
+    public var limitTokens: Int?
+    public var remainingTokens: Int?
+    public var resetTokens: Int?
+
+    public var isEmpty: Bool {
+        scope == nil && limitRequests == nil && remainingRequests == nil && resetRequests == nil
+            && limitTokens == nil && remainingTokens == nil && resetTokens == nil
+    }
+}
+
+/// An RFC 9457 problem-details error returned by the gateway.
+public struct APIError: Sendable, Hashable {
+    public var status: Int
+    public var kind: ErrorKind
+    /// Last path segment of the `type` URI. Empty when the response carried none, which is not
+    /// hypothetical -- see ``ErrorKind/otherClientError``.
+    public var typeSuffix: String
+    public var title: String
+    public var detail: String
+    public var instance: String
+    public var requestID: String
+    /// Empty when the response carried none.
+    public var traceID: String
+    /// Resolved wait in seconds, or `nil` when the platform supplied none.
+    public var retryAfter: Double?
+    /// A client-side diagnosis added where this SDK can say something `detail` does not, such as
+    /// exactly which scope a token is missing.
+    public var hint: String
+    public var rateLimit: RateLimitSnapshot?
+
+    public var isRetryable: Bool { kind.isRetryable }
+}
+
+/// An RFC 6749 §5.2 error from the token endpoint.
+///
+/// Deliberately not an ``APIError``. The two envelopes mean different things, and a caller
+/// handling "the gateway is unhappy" should not silently absorb "your credentials are wrong": a
+/// 4xx here is never worth retrying, while a gateway 5xx often is.
+public struct OAuthError: Sendable, Hashable {
+    public var status: Int
+    public var code: String
+    public var errorDescription: String
+}
+
+/// Everything this SDK throws.
+public enum AxoniumError: Error, Sendable {
+    /// A typed gateway failure.
+    case api(APIError)
+    /// The token endpoint rejected the credentials or the grant.
+    case oauth(OAuthError)
+    /// A required setting is missing or unusable. Thrown at construction, naming the setting.
+    case configuration(String)
+    /// A value that cannot be valid, caught before a round trip is spent on it.
+    case invalidRequest(String)
+    /// The request never produced an HTTP response.
+    case transport(String)
+    /// The auth-service could not be reached, or answered with something unusable. Distinct from
+    /// ``oauth(_:)``, which is the auth-service correctly reporting a rejection.
+    case authTransport(String)
+    /// The client gave up waiting. The backend may still be generating, so a retry without an
+    /// `Idempotency-Key` would start a second billable generation rather than resume the first.
+    case timeout(String)
+    /// The stream failed after it had begun.
+    ///
+    /// A failure *before* the stream begins is an ordinary ``api(_:)`` with a real status -- the
+    /// gateway reads the engine's status before committing the `200`, so a request the engine
+    /// refuses never becomes a stream. Once generation has started the headers are committed and
+    /// the only channel left is in-band, which is this.
+    case streamInterrupted(message: String, partialContent: String, requestID: String, traceID: String)
+}
+
+extension AxoniumError: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .api(let error):
+            var parts: [String] = []
+            if !error.detail.isEmpty {
+                parts.append(error.detail)
+            } else if !error.title.isEmpty {
+                parts.append(error.title)
+            } else {
+                parts.append("HTTP \(error.status)")
+            }
+            if !error.hint.isEmpty { parts.append(error.hint) }
+            if !error.requestID.isEmpty { parts.append("request_id=\(error.requestID)") }
+            if !error.traceID.isEmpty { parts.append("trace_id=\(error.traceID)") }
+            return parts.joined(separator: " ")
+        case .oauth(let error):
+            let detail = error.errorDescription.isEmpty ? error.code : error.errorDescription
+            return "the token endpoint refused the request: \(detail) (\(error.code))"
+        case .configuration(let message): return message
+        case .invalidRequest(let message): return message
+        case .transport(let message): return message
+        case .authTransport(let message): return message
+        case .timeout(let message): return message
+        case .streamInterrupted(let message, _, let requestID, let traceID):
+            var parts = ["the stream was interrupted: \(message)"]
+            if !requestID.isEmpty { parts.append("request_id=\(requestID)") }
+            if !traceID.isEmpty { parts.append("trace_id=\(traceID)") }
+            return parts.joined(separator: " ")
+        }
+    }
+}
+
+extension AxoniumError: LocalizedError {
+    public var errorDescription: String? { description }
+}

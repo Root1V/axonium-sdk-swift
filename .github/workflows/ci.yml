@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The contract corpus is a submodule. Without this the suite finds no cases -- and
+          # would report green on a contract it never read, which is why Corpus.requireSpecDirectory
+          # raises instead of skipping.
+          submodules: true
+      - run: swift --version
+      - run: swift build
+      - run: swift test
+
+  build-ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      # A package that only ever builds for macOS is a package that finds out about its iOS
+      # availability problems in somebody else's app.
+      - run: xcodebuild build -scheme Axonium -destination 'generic/platform=iOS'
