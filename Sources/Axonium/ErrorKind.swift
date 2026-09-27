@@ -50,8 +50,30 @@ public enum ErrorKind: Sendable, Hashable {
     // 429
     case rateLimitExceeded
 
+    /// The engine behind `predict` refused the request, wrapped rather than forwarded.
+    ///
+    /// The one kind whose status is not fixed. `POST /v1/models/{model}/predict` passes the body
+    /// through to the engine, so a refusal keeps the engine's status — a `422` stays a `422` —
+    /// and its error body is preserved under `backend_error`. The name therefore claims no cause:
+    /// a `429` or a `403` from the engine is also a 4xx and has nothing to do with the payload.
+    ///
+    /// Because of that, ``isRetryable`` on this case cannot answer honestly and returns `false`.
+    /// Ask ``APIError/isRetryable``, which has the status to read.
+    case predictBackendRejected
+
     // 5xx
     case upstreamError
+    /// Every replica of the model is above its pending-work headroom, so the request was refused
+    /// rather than queued behind work that would outlive its own timeout.
+    ///
+    /// A saturated replica with a free sibling is not this error — the request goes to the
+    /// sibling — so meeting it means all of them are busy, and `detail` names each.
+    ///
+    /// Distinct from ``backendUnavailable`` on purpose: that one means the replicas are broken
+    /// and somebody should look at them, this one means they are working. `retryAfter` is always
+    /// `1`, and the platform is explicit that it is a hint rather than a promise — a slot frees
+    /// when some other request finishes, and how long that takes is the model's business.
+    case capacityExhausted
     case modelNotLoaded
     case backendUnavailable
     case rateLimitingUnavailable
@@ -100,6 +122,8 @@ public enum ErrorKind: Sendable, Hashable {
         case "validation-error": self = .validationError
         case "rate-limit-exceeded-requests": self = .rateLimitExceeded
         case "upstream-error": self = .upstreamError
+        case "capacity-exhausted": self = .capacityExhausted
+        case "predict-backend-rejected": self = .predictBackendRejected
         case "model-not-loaded": self = .modelNotLoaded
         case "backend-unavailable": self = .backendUnavailable
         case "rate-limiting-unavailable": self = .rateLimitingUnavailable
@@ -125,12 +149,13 @@ public enum ErrorKind: Sendable, Hashable {
     public var isRetryable: Bool {
         switch self {
         case .tokenExpired, .rateLimitExceeded, .upstreamError, .backendUnavailable,
-            .rateLimitingUnavailable, .usageStoreUnavailable, .idempotencyInProgress,
-            .tokenEndpointUnavailable, .otherServerError:
+            .capacityExhausted, .rateLimitingUnavailable, .usageStoreUnavailable,
+            .idempotencyInProgress, .tokenEndpointUnavailable, .otherServerError:
             return true
         // modelNotLoaded is a 5xx and is not retryable: it needs an operator, not patience.
         // tokenEndpointNotConfigured shares a status with tokenEndpointUnavailable for the same
-        // reason.
+        // reason. predictBackendRejected is absent because its answer is not a property of the
+        // name; see ``APIError/isRetryable``.
         default:
             return false
         }

@@ -40,8 +40,39 @@ public struct APIError: Sendable, Hashable {
     /// exactly which scope a token is missing.
     public var hint: String
     public var rateLimit: RateLimitSnapshot?
+    /// The decoded body, so a field this SDK does not model stays reachable.
+    public var raw: [String: JSONValue] = [:]
 
-    public var isRetryable: Bool { kind.isRetryable }
+    /// Whether retrying this can plausibly succeed at all.
+    ///
+    /// Keyed on ``kind``, with one exception. ``ErrorKind/predictBackendRejected`` carries
+    /// whatever status the engine returned, so its name says nothing about whether waiting helps
+    /// and only the status can. Every other entry in the catalog can answer without looking.
+    public var isRetryable: Bool {
+        if kind == .predictBackendRejected {
+            return Self.predictBackendRetryableStatuses.contains(status)
+        }
+        return kind.isRetryable
+    }
+
+    /// The one 4xx worth repeating when the gateway wraps an engine's refusal. Everything else
+    /// the engine rejects is the request to fix.
+    private static let predictBackendRetryableStatuses: Set<Int> = [429]
+
+    /// The engine's own error body, preserved verbatim, on an error from
+    /// `POST /v1/models/{model}/predict`.
+    ///
+    /// `nil` when the extension member is absent: a gateway that wrapped the refusal without
+    /// capturing it, in which case the status is all there is. The shape is the engine's and this
+    /// SDK does not model it — that is what the pass-through route means.
+    public var backendError: JSONValue? { raw["backend_error"] }
+
+    /// The engine's status when it differs from this error's.
+    ///
+    /// Present on the `502` path, where the gateway reports its own status because a `500` the
+    /// engine produced is not one a caller can act on. On the 4xx path the two are the same and
+    /// this is `nil`.
+    public var backendStatus: Int? { raw["backend_status"]?.intValue }
 }
 
 /// An RFC 6749 §5.2 error from the token endpoint.
