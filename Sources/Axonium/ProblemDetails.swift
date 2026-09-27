@@ -54,7 +54,8 @@ public enum ProblemDetails {
             traceID: firstNonEmpty(string("trace_id"), header(headers, "X-Trace-ID")),
             retryAfter: resolvedRetryAfter,
             hint: "",
-            rateLimit: rateLimit
+            rateLimit: rateLimit,
+            raw: (body ?? [:]).mapValues(JSONValue.init)
         )
     }
 

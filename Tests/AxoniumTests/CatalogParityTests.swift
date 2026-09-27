@@ -28,20 +28,35 @@ struct CatalogParityTests {
             guard let suffix = entry["suffix"] as? String else { continue }
 
             for status in probeStatuses(entry) {
-                let kind = ErrorKind(suffix: suffix, status: status)
+                // Built as a whole error rather than asking the kind directly, because one
+                // catalogued entry's retryability is not a property of its kind:
+                // predict-backend-rejected keeps the engine's status, and only the status can
+                // answer. Asking `kind.isRetryable` would report false for a wrapped 429 and
+                // this guard would agree with it.
+                let error = ProblemDetails.apiError(
+                    status: status,
+                    body: [
+                        "type": "https://gateway.example/errors/\(suffix)",
+                        "title": suffix,
+                        "detail": "something went wrong",
+                    ],
+                    headers: [:]
+                )
 
                 // A suffix this build does not know falls back to a status-keyed kind, which is
                 // right for an unknown error and wrong for a catalogued one.
-                if kind == .otherClientError || kind == .otherServerError || kind == .unauthorized {
+                if error.kind == .otherClientError || error.kind == .otherServerError
+                    || error.kind == .unauthorized
+                {
                     problems.append(
                         "\(suffix) is in spec/errors.json but this SDK maps no kind for it")
                     continue
                 }
 
                 let want = wantRetryable(entry, status: status)
-                if kind.isRetryable != want {
+                if error.isRetryable != want {
                     problems.append(
-                        "\(suffix) at \(status): retryable is \(kind.isRetryable) here, "
+                        "\(suffix) at \(status): retryable is \(error.isRetryable) here, "
                             + "\(want) in the catalog")
                 }
             }
@@ -118,5 +133,6 @@ struct CatalogParityTests {
         "idempotency-response-not-retained", "validation-error", "rate-limit-exceeded-requests",
         "upstream-error", "model-not-loaded", "backend-unavailable", "rate-limiting-unavailable",
         "usage-store-unavailable", "upstream-unavailable", "not-configured",
+        "capacity-exhausted", "predict-backend-rejected",
     ]
 }

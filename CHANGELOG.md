@@ -18,6 +18,32 @@
 
 Everything is `Sendable` and builds under Swift 6 strict concurrency with no warnings.
 
+### Corpus bumped to 2026-09-27
+
+The submodule now pins `931e615`: guide revision `2026-09-27`, 32 catalogued errors, manifest v19.
+The parity guard refused the bump until both new types were mapped, which is what it is for:
+
+    capacity-exhausted is in spec/errors.json but this SDK maps no kind for it
+    predict-backend-rejected is in spec/errors.json but this SDK maps no kind for it
+
+- `ErrorKind.capacityExhausted` — every replica busy rather than broken, retryable.
+- `ErrorKind.predictBackendRejected` — the pass-through route keeps the engine's status, so the
+  name claims no cause and `ErrorKind.isRetryable` cannot answer for it. `APIError.isRetryable`
+  reads the status instead, and the engine's own body is reachable through `backendError`.
+
+That second one forced the parity guard to build a whole `APIError` rather than ask the kind, and
+it forced `APIError` to carry the body at all.
+
+- `JSONValue` — a `Sendable`, `Hashable` JSON tree, and `APIError.raw`. The other three SDKs have
+  always kept the decoded body so a field they do not model stays reachable; this one could not,
+  because `[String: Any]` is neither `Sendable` nor `Hashable`, and an unsendable error is
+  unusable across the actor boundary errors actually travel over.
+
+**And the mutation that survived at M0 now dies.** Removing the header fallback and replaying the
+corpus:
+
+    error-correlation-ids-only-in-the-headers: request_id present is false, expected true
+
 ### Corrected
 
 **The separate repository is a decision, not a constraint, and M0 shipped saying otherwise.**
