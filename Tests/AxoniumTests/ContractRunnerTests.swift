@@ -32,7 +32,7 @@ struct ContractRunnerTests {
         for testCase in selected {
             let id = testCase["id"] as? String ?? "?"
             let operation = testCase["operation"] as? String ?? ""
-            guard let response = testCase["response"] as? [String: Any],
+            guard !Self.responseSequence(testCase).isEmpty,
                 let expect = testCase["expect"] as? [String: Any]
             else {
                 problems.append(unreadable(testCase, id: id))
@@ -41,13 +41,15 @@ struct ContractRunnerTests {
             replayed += 1
 
             do {
-                let (client, stubs) = try makeClient(response: response)
+                let (client, stubs) = try makeClient(testCase)
                 if let requestID = (testCase["request"] as? [String: Any])?["request_id"]
                     as? String
                 {
-                    try stubFrom(response, path: "/v1/usage/\(requestID)", into: stubs)
+                    try stubFrom(testCase, path: "/v1/usage/\(requestID)", into: stubs)
                 }
                 let result = try await invoke(operation: operation, case: testCase, client: client)
+                problems += checkCounts(
+                    expect, stubs: stubs, meta: nil, id: id, path: endpoint(for: operation))
                 for (path, wanted) in expect["fields"] as? [String: Any] ?? [:] {
                     let got = resolve(path, in: result)
                     if !matches(got, wanted) {
@@ -79,7 +81,7 @@ struct ContractRunnerTests {
 
         for testCase in selected {
             let id = testCase["id"] as? String ?? "?"
-            guard let response = testCase["response"] as? [String: Any],
+            guard !Self.responseSequence(testCase).isEmpty,
                 let expect = testCase["expect"] as? [String: Any]
             else {
                 problems.append(unreadable(testCase, id: id))
@@ -88,7 +90,7 @@ struct ContractRunnerTests {
             replayed += 1
 
             do {
-                let (client, _) = try makeClient(response: response)
+                let (client, stubs) = try makeClient(testCase)
                 let stream = try await client.chatStream(chatRequest(testCase))
                 var chunks = 0
                 for try await _ in stream { chunks += 1 }
@@ -101,6 +103,7 @@ struct ContractRunnerTests {
                 }
                 problems += await checkUsage(expect, stream: stream, id: id)
                 problems += await checkToolCalls(expect, stream: stream, id: id)
+                problems += checkCounts(expect, stubs: stubs, meta: stream.meta, id: id)
             } catch {
                 problems.append("\(id): threw \(error)")
             }
@@ -118,7 +121,7 @@ struct ContractRunnerTests {
 
         for testCase in selected {
             let id = testCase["id"] as? String ?? "?"
-            guard let response = testCase["response"] as? [String: Any],
+            guard !Self.responseSequence(testCase).isEmpty,
                 let expect = testCase["expect"] as? [String: Any]
             else {
                 problems.append(unreadable(testCase, id: id))
@@ -126,7 +129,7 @@ struct ContractRunnerTests {
             }
             replayed += 1
 
-            let (client, _) = try makeClient(response: response)
+            let (client, stubs) = try makeClient(testCase)
             do {
                 let stream = try await client.chatStream(chatRequest(testCase))
                 for try await _ in stream {}
@@ -137,8 +140,79 @@ struct ContractRunnerTests {
                 if let want = expect["partial_content"] as? String, partial != want {
                     problems.append("\(id): partial content was \(partial), expected \(want)")
                 }
+                // And the count is what proves the SDK did not quietly retry. The case serves a
+                // healthy stream as its second answer precisely so that a wrong retry would
+                // succeed and be invisible in the content — only the request count sees it.
+                problems += checkCounts(expect, stubs: stubs, meta: nil, id: id)
             } catch {
                 problems.append("\(id): threw \(error), expected a stream interruption")
+            }
+        }
+
+        #expect(replayed == selected.count, arithmetic(replayed, of: selected.count))
+        #expect(problems.isEmpty, "\(problems.joined(separator: "\n"))")
+    }
+
+    // MARK: - errors that must be met through the client, not decoded
+
+    /// Error cases whose operation is a **stream**, replayed through `chatStream` itself.
+    ///
+    /// `ErrorEnvelopeTests` decodes every error case from its recorded body, which proves the
+    /// envelope is read correctly and proves nothing about the transport. For these two that is
+    /// the whole question: a streamed request refused *before* the stream begins must throw
+    /// instead of yielding an empty answer, and an SDK that starts parsing SSE because it asked
+    /// for a stream would pass the decoding test while failing the contract.
+    ///
+    /// So they are replayed twice on purpose, once for the envelope and once for the transport.
+    @Test("a streamed request refused before it begins throws, rather than yielding nothing")
+    func streamedErrorCases() async throws {
+        var problems: [String] = []
+        let selected = try Corpus.cases(kind: "error").filter {
+            ($0["operation"] as? String) == "chat.completions.stream"
+        }
+        var replayed = 0
+
+        for testCase in selected {
+            let id = testCase["id"] as? String ?? "?"
+            guard let expect = testCase["expect"] as? [String: Any],
+                !Self.responseSequence(testCase).isEmpty
+            else {
+                problems.append(unreadable(testCase, id: id))
+                continue
+            }
+            replayed += 1
+
+            let (client, _) = try makeClient(testCase)
+            do {
+                let stream = try await client.chatStream(chatRequest(testCase))
+                var frames = 0
+                for try await _ in stream { frames += 1 }
+                problems.append(
+                    "\(id): the stream yielded \(frames) frames; the refusal must throw before "
+                        + "the first, or every rejection becomes a silent empty answer")
+            } catch let AxoniumError.api(error) {
+                let wantStatus = Self.responseSequence(testCase).last?["status"] as? Int
+                if let wantStatus, error.status != wantStatus {
+                    problems.append("\(id): status was \(error.status), expected \(wantStatus)")
+                }
+                let wantSuffix = expect["error_type_suffix"] as? String ?? ""
+                if error.typeSuffix != wantSuffix {
+                    problems.append(
+                        "\(id): type suffix was \(error.typeSuffix), expected \(wantSuffix)")
+                }
+                if let want = expect["retryable"] as? Bool, error.isRetryable != want {
+                    problems.append("\(id): retryable is \(error.isRetryable), expected \(want)")
+                }
+                if let want = expect["has_request_id"] as? Bool,
+                    !error.requestID.isEmpty != want
+                {
+                    problems.append("\(id): request_id present is \(!error.requestID.isEmpty)")
+                }
+                if let want = expect["has_trace_id"] as? Bool, !error.traceID.isEmpty != want {
+                    problems.append("\(id): trace_id present is \(!error.traceID.isEmpty)")
+                }
+            } catch {
+                problems.append("\(id): threw \(error), expected a typed gateway error")
             }
         }
 
@@ -159,7 +233,7 @@ struct ContractRunnerTests {
         for testCase in selected {
             let id = testCase["id"] as? String ?? "?"
             guard let expect = testCase["expect"] as? [String: Any],
-                let response = testCase["response"] as? [String: Any]
+                !Self.responseSequence(testCase).isEmpty
             else {
                 problems.append(unreadable(testCase, id: id))
                 continue
@@ -167,7 +241,7 @@ struct ContractRunnerTests {
             replayed += 1
 
             let stubs = StubProtocol.Session()
-            try stubFrom(response, path: "/oauth2/token", into: stubs)
+            try stubFrom(testCase, path: "/oauth2/token", into: stubs)
             stubs.stub(
                 path: "/v1/models/mine",
                 .init(status: 200, headers: [:], body: Data(#"{"object":"list","data":[]}"#.utf8)))
@@ -238,44 +312,104 @@ struct ContractRunnerTests {
         return Comment(rawValue: message)
     }
 
+    /// Which path a given operation hits, so a request count knows where to look.
+    private func endpoint(for operation: String) -> String {
+        switch operation {
+        case "embeddings.create": return "/v1/embeddings"
+        case "images.generate": return "/v1/images/generations"
+        case "rerank.create": return "/v1/rerank"
+        case "models.list": return "/v1/models"
+        case "models.mine": return "/v1/models/mine"
+        default: return "/v1/chat/completions"
+        }
+    }
+
     private func operationName(_ testCase: [String: Any]) -> String {
         testCase["operation"] as? String ?? "?"
     }
 
     /// A client and the stub session it talks to, isolated from every other test.
-    private func makeClient(response: [String: Any]) throws -> (AxoniumClient, StubProtocol.Session)
-    {
+    ///
+    /// **Built with the SDK's default retry policy, deliberately.** It used to pass `.none`,
+    /// which was a harness convenience until a case began asserting `expect.requests` — at that
+    /// point the retry policy stopped being the harness's business and became part of what the
+    /// case measures. The manifest's `$request_counts` says so, and a runner overriding it would
+    /// report "this SDK does not retry" about an SDK that does, sending whoever reads it to look
+    /// for the fault in the wrong place.
+    private func makeClient(_ testCase: [String: Any]) throws -> (
+        AxoniumClient, StubProtocol.Session
+    ) {
         let stubs = StubProtocol.Session()
         stubs.stubToken()
         for path in [
             "/v1/chat/completions", "/v1/models", "/v1/models/mine", "/v1/embeddings",
             "/v1/images/generations", "/v1/rerank",
         ] {
-            try stubFrom(response, path: path, into: stubs)
+            try stubFrom(testCase, path: path, into: stubs)
         }
         let client = try AxoniumClient(
             configuration: .init(
                 gatewayBaseURL: "https://gateway.test", clientID: "id", clientSecret: "secret",
-                retry: .none, sessionConfiguration: stubs.configuration))
+                sessionConfiguration: stubs.configuration))
         return (client, stubs)
     }
 
-    private func stubFrom(_ response: [String: Any], path: String, into stubs: StubProtocol.Session)
+    /// The answers a case serves, as an ordered sequence.
+    ///
+    /// A case carries either one `response` or a `responses` list. The list is what a retry case
+    /// needs: "rejected, then served" is two different answers to the same request, and one stub
+    /// cannot say that.
+    static func responseSequence(_ testCase: [String: Any]) -> [[String: Any]] {
+        if let sequence = testCase["responses"] as? [[String: Any]] { return sequence }
+        if let single = testCase["response"] as? [String: Any] { return [single] }
+        return []
+    }
+
+    private func stubFrom(_ testCase: [String: Any], path: String, into stubs: StubProtocol.Session)
         throws
     {
-        let status = response["status"] as? Int ?? 200
-        let headers = response["headers"] as? [String: String] ?? [:]
-        if let file = response["body_file"] as? String {
-            stubs.stub(
-                path: path,
-                .init(status: status, headers: headers, body: try Corpus.fixtureData(file)))
-        } else if let file = response["sse_file"] as? String {
-            stubs.stub(
-                path: path,
-                .init(
-                    status: status, headers: headers, body: try Corpus.fixtureData(file),
-                    isEventStream: true))
+        var sequence: [StubProtocol.Stub] = []
+        for response in Self.responseSequence(testCase) {
+            let status = response["status"] as? Int ?? 200
+            let headers = response["headers"] as? [String: String] ?? [:]
+            if let file = response["body_file"] as? String {
+                sequence.append(
+                    .init(status: status, headers: headers, body: try Corpus.fixtureData(file)))
+            } else if let file = response["sse_file"] as? String {
+                sequence.append(
+                    .init(
+                        status: status, headers: headers, body: try Corpus.fixtureData(file),
+                        isEventStream: true))
+            }
         }
+        guard !sequence.isEmpty else { return }
+        stubs.stub(path: path, sequence)
+    }
+
+    /// Checks `expect.requests` and `expect.attempts` where a case states them.
+    ///
+    /// The two are different facts and both are worth pinning. `requests` is what the server
+    /// counted, which is the truth about behaviour; `attempts` is what the SDK reports about
+    /// itself, which is the truth about its accounting. An SDK can retry correctly and report it
+    /// wrongly, and only asserting both tells the two apart.
+    private func checkCounts(
+        _ expect: [String: Any], stubs: StubProtocol.Session, meta: ResponseMeta?, id: String,
+        path: String = "/v1/chat/completions"
+    ) -> [String] {
+        var problems: [String] = []
+        if let want = expect["requests"] as? Int {
+            let got = stubs.requests(to: path).count
+            if got != want {
+                problems.append("\(id): the server saw \(got) requests, expected \(want)")
+            }
+        }
+        if let want = expect["attempts"] as? Int, let meta {
+            if meta.attempts != want {
+                problems.append(
+                    "\(id): the SDK reports \(meta.attempts) attempts, expected \(want)")
+            }
+        }
+        return problems
     }
 
     private func invoke(operation: String, case testCase: [String: Any], client: AxoniumClient)
@@ -425,7 +559,11 @@ struct CoverageTests {
             case "ok": claimed = true  // successCases, or tokenRequestCases for token.fetch
             case "stream": claimed = operation == "chat.completions.stream"
             case "stream_error": claimed = operation == "chat.completions.stream"
-            case "error": claimed = true  // ErrorEnvelopeTests replays all of them
+            // ErrorEnvelopeTests decodes every one of them from its recorded body; the two
+            // whose operation is a stream are ALSO replayed through the client by
+            // streamedErrorCases, because decoding proves the envelope and says nothing about
+            // whether chatStream throws instead of yielding nothing.
+            case "error": claimed = true
             case "oauth_error", "auth_transport_error": claimed = operation == "token.fetch"
             default: claimed = false
             }
@@ -446,11 +584,11 @@ struct CoverageTests {
             ($0["expect"] as? [String: Any])?["kind"] as? String ?? "?"
         }.mapValues(\.count)
 
-        #expect(cases.count == 40, "the manifest has \(cases.count) cases, expected 40")
+        #expect(cases.count == 44, "the manifest has \(cases.count) cases, expected 44")
         #expect(byKind["ok"] == 14)
-        #expect(byKind["error"] == 15)
-        #expect(byKind["stream"] == 6)
-        #expect(byKind["stream_error"] == 1)
+        #expect(byKind["error"] == 17)
+        #expect(byKind["stream"] == 7)
+        #expect(byKind["stream_error"] == 2)
         #expect(byKind["oauth_error"] == 2)
         #expect(byKind["auth_transport_error"] == 2)
 

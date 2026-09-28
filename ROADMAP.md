@@ -35,12 +35,11 @@ Embeddings, rerank, images, usage and rate-limit snapshots landed with M1 — th
 corpus, and leaving them out would have meant a runner that skips cases. What is left:
 
 - `TokenClaims` surfaced on the client rather than only as a type.
-- **Teach the contract runner an ordered response *sequence*** (`responses`) and the
-  `expect.requests` count, then bump the corpus to v20. Two cases need it, both about stream
-  retries — see below. Until then the corpus stays pinned below v20, because a runner that reads only
-  `case["response"]` would skip or misreport them.
-- **Reopen a stream rejected before it begins**, per the decision below. The status check is already
-  there; the retry is not.
+- ~~Teach the contract runner an ordered response *sequence* and the `expect.requests` count.~~
+  Done; the corpus is pinned at v21, 44 cases, all replaying.
+- ~~Reopen a stream rejected before it begins.~~ Done — and the corpus found it. The bump to v21
+  failed `stream-retried-when-rejected-before-it-begins` on the first run, which is the whole
+  reason for being held to somebody else's cases rather than one's own.
 - `X-Prometheus-Ignored-Parameters`, once the four SDKs decide it together.
 - `predict(model:body:)` for the pass-through route, which no SDK implements yet.
 
@@ -83,6 +82,6 @@ serving an ordered *sequence* of responses, and an `expect.requests` count of ho
 server. The count, not the SDK's own `attempts`, is the assertion that would have caught the
 divergence — an SDK can be wrong about what it reports while the server's count is the fact.
 
-**This runner reads `case["response"]` and knows nothing of `responses`.** The corpus is still pinned
-below v20, so nothing fails yet; bumping it without teaching the runner the sequence shape would make
-the two cases fail for the wrong reason, or skip silently, which is worse. See M2.
+Both are replayed here now. The runner reads either shape, counts what the server saw, and builds
+its client with the SDK's **default** retry policy — which stopped being a harness detail the moment
+a case began asserting `expect.requests`, and which the manifest's `$request_counts` now states.

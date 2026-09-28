@@ -305,33 +305,69 @@ public final class AxoniumClient: Sendable {
         return request
     }
 
+    /// Opens a stream, reopening it when the gateway refuses before the stream begins.
+    ///
+    /// **A stream is retried before it starts and never after**, and the line between the two is
+    /// not a judgement call: on a stream an error can only be observed from the status line,
+    /// before a single byte of body exists. A `4xx` or `5xx` here therefore means nothing was
+    /// generated and nothing was billed, so reopening is not a second generation. Once the `200`
+    /// is committed the only failure channel left is in-band, and by then output has been
+    /// delivered and charged — that one is never retried, and ``ChatStream`` has no path that
+    /// would.
+    ///
+    /// It also matters that the gateway performs **no internal retries at all** for streams, so
+    /// here the client is not one retry too many — it is the only one there is.
+    ///
+    /// This was reachable only once the platform stopped answering a pre-start refusal with a
+    /// `200` carrying nothing but the terminal frame. Before that there was no rejection visible
+    /// to reopen against.
     private func openStream(path: String, body: [String: Any], options: CallOptions) async throws
         -> ChatStream
     {
-        let token = try await tokens.token()
-        var request = try buildRequest(
-            method: "POST", path: path, body: body, options: options, token: token)
+        var waited: TimeInterval = 0
+        var attempt = 1
 
-        var (byteStream, response) = try await openBytes(request)
-        if response.statusCode == 401 {
-            let fresh = try await tokens.refresh(rejected: token)
-            request = try buildRequest(
-                method: "POST", path: path, body: body, options: options, token: fresh)
-            (byteStream, response) = try await openBytes(request)
-        }
+        while true {
+            let token = try await tokens.token()
+            var request = try buildRequest(
+                method: "POST", path: path, body: body, options: options, token: token)
 
-        let headers = Transport.headers(response)
-        // Checked before a single frame is parsed. A streamed request can be refused before the
-        // stream begins, and the refusal is an ordinary error response with the engine's status.
-        // Assuming `stream: true` implies 200 is how a rejection becomes an empty answer.
-        if response.statusCode >= 400 {
+            var (byteStream, response) = try await openBytes(request)
+            // Reactive fallback for a token revoked mid-flight, once and only once per attempt.
+            if response.statusCode == 401 {
+                let fresh = try await tokens.refresh(rejected: token)
+                request = try buildRequest(
+                    method: "POST", path: path, body: body, options: options, token: fresh)
+                (byteStream, response) = try await openBytes(request)
+            }
+
+            let headers = Transport.headers(response)
+
+            if response.statusCode < 400 {
+                var meta = ResponseMeta.from(headers: headers)
+                meta.waitedFor = waited
+                meta.attempts = attempt
+                return ChatStream(bytes: byteStream, meta: meta)
+            }
+
+            // An error response is an ordinary buffered body, so it has to be drained before it
+            // can be typed.
             var data = Data()
             for try await byte in byteStream { data.append(byte) }
-            throw AxoniumError.api(
-                makeError(RawResponse(status: response.statusCode, headers: headers, data: data)))
-        }
+            let error = makeError(
+                RawResponse(status: response.statusCode, headers: headers, data: data))
 
-        return ChatStream(bytes: byteStream, meta: ResponseMeta.from(headers: headers))
+            guard
+                let delay = configuration.retry.delay(
+                    for: error, attempt: attempt,
+                    hasIdempotencyKey: options.idempotencyKey != nil)
+            else {
+                throw AxoniumError.api(error)
+            }
+            try await Task.sleep(for: .seconds(delay))
+            waited += delay
+            attempt += 1
+        }
     }
 
     private func openBytes(_ request: URLRequest) async throws -> (

@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+**A stream refused before it begins is now reopened, and the corpus is what found that it was not.**
+
+The runner learned two things the manifest gained in v20: a case can serve an ordered *sequence* of
+responses, and it can assert `expect.requests` — how many requests the server actually counted.
+Bumping the corpus from v19 to v21 then failed on the first run:
+
+    stream-retried-when-rejected-before-it-begins: threw ... rate limit ... 60 RPM
+
+Recognising the rejection was already there since M1. Reopening was not, and nothing here would
+have noticed: this SDK's own tests asserted that the refusal throws, which it did. Being held to
+somebody else's cases is the point.
+
+`openStream` now retries, and only where retrying cannot mean a second generation: on a stream an
+error is observable **only** from the status line, before a byte of body exists, so a `4xx`/`5xx`
+there means nothing was generated and nothing was billed. Once the `200` is committed the only
+channel left is in-band, and that one is never retried.
+
+Also in this change:
+
+- The contract runner builds its client with the SDK's **default** retry policy. It passed `.none`,
+  which was a harness convenience until a case began counting requests — at which point the policy
+  became part of what the case measures. A runner overriding it would report "this SDK does not
+  retry" about an SDK that does.
+- The two error cases whose operation is a stream are replayed **through the client**, not only
+  decoded. Decoding proves the envelope and says nothing about whether `chatStream` throws instead
+  of yielding nothing, which is their entire purpose.
+
+### Removed
+
+`StreamRejectionTests`, in the same commit that put its replacement to work. It was written as a
+stopgap for a corpus with no case for a pre-start refusal and said so in the file; v21 has two,
+replayed through the real client, and mutation confirms they catch what it caught. A stopgap kept
+past its replacement is a second copy of the truth.
+
+The idempotency tests moved to `IdempotencyKeyTests` rather than going with it: the corpus still
+does not pin that the key reaches the wire.
+
+
 **The test that catches an invented error suffix did not catch an invented error suffix.**
 
 It checked a hand-maintained array of the suffixes `ErrorKind.init` claims to resolve. That array
