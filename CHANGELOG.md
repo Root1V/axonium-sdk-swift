@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+**The test that catches an invented error suffix did not catch an invented error suffix.**
+
+It checked a hand-maintained array of the suffixes `ErrorKind.init` claims to resolve. That array
+sat beside the initialiser, so the same hand edited both — and the one thing it guards against is
+the one thing that hand forgets. Measured:
+
+    added `case "inventado-por-mi"` to the initialiser and not to the array
+      -> 19 tests, all green
+
+The array is gone. The list is now read out of `ErrorKind.swift` at test time, which is blunt and
+is the only version that cannot drift. A second test guards the reading itself, because a pattern
+that matches nothing returns an empty list and every check above it passes against one.
+
+Found because a sibling SDK hit the identical shape the same day: a `suffix -> kind` table in its
+own contract runner that covered only what the corpus already exercised.
+
+
 **A case this runner cannot read is now a failure, where it used to be a skip.**
 
 Every replay loop selected its cases, then `continue`d past any it could not parse. Each suite

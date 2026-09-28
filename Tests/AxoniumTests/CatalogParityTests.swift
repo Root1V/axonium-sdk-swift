@@ -70,19 +70,32 @@ struct CatalogParityTests {
     @Test("no mapped suffix is absent from the catalog")
     func noInventedSuffixes() throws {
         let catalogued = Set(try gatewayErrors().compactMap { $0["suffix"] as? String })
+        let claimed = try Self.suffixesThisSDKClaims()
 
-        // Resolved through the public initialiser rather than a hand-written list, so a suffix
-        // that stops resolving is caught here rather than looking absent.
-        var mapped: [String] = []
-        for suffix in Self.suffixesThisSDKClaims {
-            let kind = ErrorKind(suffix: suffix, status: 400)
-            if kind != .otherClientError { mapped.append(suffix) }
-        }
+        // Each one resolved through the public initialiser, so a suffix that stops resolving
+        // shows up here rather than looking absent.
+        let mapped = claimed.filter { ErrorKind(suffix: $0, status: 400) != .otherClientError }
 
         let invented = Set(mapped).subtracting(catalogued)
         #expect(
             invented.isEmpty,
             "this SDK maps \(invented.sorted()) but spec/errors.json does not list them")
+    }
+
+    /// A guard on the guard above: the claimed suffixes must come from the code.
+    ///
+    /// If that list were maintained beside the initialiser rather than read out of it, the same
+    /// hand would edit both — and the one thing it exists to catch, a suffix this SDK invented,
+    /// is precisely what that hand would forget to declare.
+    @Test("the claimed suffixes are read from the initialiser, and there are some")
+    func claimedSuffixesComeFromTheSource() throws {
+        let claimed = try Self.suffixesThisSDKClaims()
+        // A pattern that matches nothing returns an empty list, and every check above passes
+        // against one. If the initialiser is reformatted out of this shape, fail here rather
+        // than quietly stop testing.
+        #expect(claimed.count > 25, "read only \(claimed.count) suffixes from ErrorKind.swift")
+        #expect(claimed.contains("backend-unavailable"))
+        #expect(claimed.contains("capacity-exhausted"))
     }
 
     /// An unknown suffix must fall back by status rather than failing: the catalog grows, and an
@@ -119,20 +132,35 @@ struct CatalogParityTests {
         return statuses.contains(status)
     }
 
-    /// The suffixes ``ErrorKind/init(suffix:status:)`` claims to resolve.
+    /// The suffixes ``ErrorKind/init(suffix:status:)`` claims to resolve, read out of its source.
     ///
-    /// Written out rather than derived, because Swift has no reflection over a switch. It is the
-    /// list the test above holds against the catalog, so a case added to the initialiser and
-    /// forgotten here shows up as a catalogued suffix with no mapping in the other direction.
-    static let suffixesThisSDKClaims = [
-        "unknown-model", "modality-mismatch", "context-exceeded", "unknown-parameter",
-        "unknown-instance", "invalid-idempotency-key", "inconsistent-model-group", "invalid-date",
-        "invalid-range", "range-too-large", "missing-credentials", "invalid-token",
-        "token-expired", "token-revoked", "unauthorized", "spend-cap-exceeded", "forbidden",
-        "not-found", "idempotency-key-reuse", "idempotency-in-progress",
-        "idempotency-response-not-retained", "validation-error", "rate-limit-exceeded-requests",
-        "upstream-error", "model-not-loaded", "backend-unavailable", "rate-limiting-unavailable",
-        "usage-store-unavailable", "upstream-unavailable", "not-configured",
-        "capacity-exhausted", "predict-backend-rejected",
-    ]
+    /// **Derived, not written down.** This used to be a hand-maintained array, with a comment
+    /// explaining that Swift has no reflection over a `switch` — true, and not a good enough
+    /// reason. A list kept beside the code it describes is edited by the same hand that edits
+    /// the code, so the one thing it guards against is the one thing that hand forgets.
+    ///
+    /// Measured rather than argued: adding `case "inventado-por-mi"` to the initialiser and not
+    /// to the array left the whole suite green. The test meant to catch an invented suffix was
+    /// the test that passed.
+    ///
+    /// A sibling SDK hit the same shape the same day — a `suffix -> kind` table in its own
+    /// runner covering only what the corpus already exercised. Reading the source is blunt, and
+    /// it is the only version of this that cannot drift.
+    static func suffixesThisSDKClaims() throws -> [String] {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<3 { url.deleteLastPathComponent() }
+        let source = try String(
+            contentsOf: url.appendingPathComponent("Sources/Axonium/ErrorKind.swift"),
+            encoding: .utf8)
+
+        // `        case "some-suffix": self = .someKind` — anchored on the leading indentation
+        // so a backticked suffix in a doc comment cannot be mistaken for a mapping.
+        let pattern = try NSRegularExpression(
+            pattern: "^        case \"([a-z0-9-]+)\": self = \\.",
+            options: [.anchorsMatchLines])
+        let range = NSRange(source.startIndex..., in: source)
+        return pattern.matches(in: source, range: range).compactMap { match in
+            Range(match.range(at: 1), in: source).map { String(source[$0]) }
+        }
+    }
 }
