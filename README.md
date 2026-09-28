@@ -3,9 +3,9 @@
 The Axonium SDK for the Prometheus inference platform, for macOS, iOS, iPadOS, visionOS and
 watchOS.
 
-> **Status: M0.** The contract layer is here and is held to the shared corpus by tests. The HTTP
-> client is not. See [CHANGELOG.md](CHANGELOG.md) for what exists today and
-> [ROADMAP.md](ROADMAP.md) for the order the rest arrives in.
+> **Status: M1.** The client works and replays all 40 cases of the shared contract corpus. Not
+> yet tagged, so it cannot be resolved as a package dependency — see [ROADMAP.md](ROADMAP.md)
+> for what M2 and 1.0 add.
 
 ```swift
 .package(url: "https://github.com/Root1V/axonium-sdk-swift", from: "0.1.0")
@@ -72,6 +72,41 @@ A plain clone leaves `Corpus/` empty. The suite **fails** in that case rather th
 purpose: a run that passes by finding no cases proves nothing, and would report green on a
 contract it never read.
 
+## Using it
+
+```swift
+import Axonium
+
+let client = try AxoniumClient(configuration: .init(
+    gatewayBaseURL: "https://gateway.example",
+    clientID: id,
+    clientSecret: secretFromKeychain))     // never hard-coded, never logged
+
+let answer = try await client.chat(.init(
+    model: "qwen3-0.6b",
+    messages: [.system("Responde en español."), .user("¿Capital de Perú?")]))
+print(answer.content ?? "")
+
+for try await chunk in try await client.chatStream(request) {
+    print(chunk.content ?? "", terminator: "")
+}
+```
+
+**Configured in code.** An app on macOS or iOS has no meaningful process environment and no
+`.env`; the secret comes out of the Keychain at runtime. `AxoniumConfiguration.fromEnvironment()`
+exists for command-line tools and is never required.
+
+**Everything is `Sendable`** and builds under Swift 6 strict concurrency with no warnings. The
+token provider is an `actor`, so a burst of concurrent calls on an expired token produces one
+token request rather than one per caller.
+
+| | |
+|---|---|
+| `chat` / `chatStream` | completions, and an `AsyncSequence` with cooperative cancellation |
+| `models` / `modelsMine` | the public catalog, and what this token actually holds scope for |
+| `embeddings` / `images` / `rerank` | the rest of inference |
+| `usage(requestID:)` | the accounting row for one request |
+
 ## What is tested today
 
 ```
@@ -81,7 +116,10 @@ swift test
 | Suite | What it holds |
 |---|---|
 | Error catalog parity | Every suffix in `errors.json` maps to an `ErrorKind`, with the catalogued retryability, in both directions. An unknown suffix falls back by status rather than failing. |
-| Error envelopes | All 14 gateway error cases and all 8 token-endpoint cases in the manifest, decoded from the recorded bodies. |
+| Error envelopes | All 15 gateway error cases and all 8 token-endpoint cases, decoded from the recorded bodies. |
+| Contract runner | All 14 success cases and all 7 streaming cases, replayed through the real client over `URLProtocol`. |
+| Stream rejection | The two things the corpus does **not** pin: a stream refused before it begins, and the idempotency key reaching the wire. Both were found by mutation — breaking them left all 40 manifest cases passing. |
+| Corpus coverage | That every case in the manifest is claimed by a suite. Each suite above passes against an empty selection; this is the guard on the selections. |
 
 ## Requirements
 

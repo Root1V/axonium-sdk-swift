@@ -143,12 +143,4 @@ struct ErrorEnvelopeTests {
         }
     }
 
-    private func matches(_ got: Any?, _ wanted: Any) -> Bool {
-        switch (got, wanted) {
-        case (let g as String, let w as String): return g == w
-        case (let g as Int, let w as Int): return g == w
-        case (let g as Double, let w as NSNumber): return g == w.doubleValue
-        default: return false
-        }
-    }
 }
