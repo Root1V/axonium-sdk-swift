@@ -5,15 +5,15 @@ import Testing
 
 /// The idempotency behaviour the shared corpus still does not pin.
 ///
-/// This file used to also hold the two stream-rejection tests. Those are gone, and their going
-/// is the point: they were written as a stopgap for a corpus that had no case for a streamed
-/// request refused before the stream begins, and said so in as many words. Manifest v21 added
-/// `stream-rejected-before-it-begins-is-an-error` and its retryable sibling, both replayed
-/// through the real client by `ContractRunnerTests.streamedErrorCases`, and mutation confirms
-/// they catch what these caught. A stopgap kept past its replacement is just a second copy.
+/// This file keeps shrinking, which is the point. It began as a stopgap for two things the corpus
+/// was blind to, and each time the corpus grows a case for one of them, that part goes — in the
+/// commit that puts the replacement to work, never against a promise of one.
 ///
-/// What remains is genuinely unpinned. The corpus has a replay case, but it asserts on what
-/// comes *back* — an SDK that never sent an `Idempotency-Key` would pass it.
+/// Gone with manifest v22, which added `expect.request_headers`: that the key reaches the wire on
+/// both a completion and a stream. Two cases assert it now, and mutation confirms they catch what
+/// was caught here.
+///
+/// What is left is what v22 did **not** reach.
 struct IdempotencyKeyTests {
 
     private func client(_ stubs: StubProtocol.Session) throws -> AxoniumClient {
@@ -23,50 +23,49 @@ struct IdempotencyKeyTests {
                 retry: .none, sessionConfiguration: stubs.configuration))
     }
 
-    /// The idempotency key has to reach the wire, on a stream as much as on a buffered call.
+    /// A streamed replay has to be recognisable as one, and only this says so.
     ///
-    /// Worth a test of its own because the corpus checks only what comes *back*: its replay case
-    /// asserts on the response headers, so an SDK that never sent a key would still pass it.
-    @Test("the idempotency key reaches the wire on both a stream and a completion")
-    func idempotencyKeyIsSent() async throws {
-        for streaming in [false, true] {
-            let stubs = StubProtocol.Session()
-            stubs.stubToken()
-            stubs.stub(
-                path: "/v1/chat/completions",
-                .init(
-                    status: 200,
-                    headers: [
-                        "Idempotent-Replay": "true",
-                        "X-Idempotent-Replay-Of": "original-1",
-                    ],
-                    body: streaming
-                        ? Data("data: [DONE]\n\n".utf8)
-                        : Data(#"{"choices":[{"index":0,"message":{"content":"hi"}}]}"#.utf8),
-                    isEventStream: streaming))
+    /// `chat-idempotent-replay` asserts `meta.idempotent_replay` and its `_of`. Its streaming
+    /// sibling, `stream-idempotent-replay`, asserts content, chunk count, usage and the key on
+    /// the wire — but nothing about the replay flags. Measured: dropping the meta from the stream
+    /// path entirely leaves all 44 cases green and fails only here.
+    ///
+    /// It matters because the two outcomes come from the same call site. A replay was neither
+    /// generated nor charged, and a caller reconciling cost has no other way to tell which one
+    /// they got — `meta.idempotentReplayOf` is the id that actually carries the usage row, since
+    /// a replay's own id has none.
+    ///
+    /// Reported upstream as a gap in that case.
+    @Test("a streamed replay is flagged as a replay, and names the request that was charged")
+    func streamedReplayIsFlagged() async throws {
+        let stubs = StubProtocol.Session()
+        stubs.stubToken()
+        stubs.stub(
+            path: "/v1/chat/completions",
+            .init(
+                status: 200,
+                headers: [
+                    "X-Request-ID": "replay-1",
+                    "Idempotent-Replay": "true",
+                    "X-Idempotent-Replay-Of": "original-1",
+                ],
+                body: Data("data: [DONE]\n\n".utf8),
+                isEventStream: true))
 
-            let request = ChatRequest(model: "qwen3-0.6b", messages: [.user("hi")])
-            let meta: ResponseMeta
-            if streaming {
-                let stream = try await client(stubs).chatStream(request, idempotencyKey: "key-1")
-                for try await _ in stream {}
-                meta = stream.meta
-            } else {
-                meta = try await client(stubs).chat(request, idempotencyKey: "key-1").meta
-            }
+        let stream = try await client(stubs).chatStream(
+            .init(model: "qwen3-0.6b", messages: [.user("hi")]), idempotencyKey: "k")
+        for try await _ in stream {}
 
-            let sent = stubs.requests(to: "/v1/chat/completions").first
-            #expect(
-                sent?.headers["Idempotency-Key"] == "key-1",
-                "streaming=\(streaming): the key never reached the wire")
-            // A replay was neither generated nor charged, and the same call site produces both,
-            // so a caller has to be able to tell which one they got.
-            #expect(meta.idempotentReplay, "streaming=\(streaming): the replay was not flagged")
-            #expect(meta.idempotentReplayOf == "original-1")
-        }
+        #expect(stream.meta.idempotentReplay, "the streamed replay was not flagged")
+        #expect(stream.meta.idempotentReplayOf == "original-1")
+        #expect(stream.meta.requestID == "replay-1")
     }
 
     /// A key longer than the gateway accepts fails here, before a round trip is spent on it.
+    ///
+    /// Not expressible as a contract case at all: the assertion is that **no request happens**,
+    /// and a corpus case describes a request and its answer. This is the kind of thing that
+    /// legitimately lives outside the corpus rather than waiting for it.
     @Test("an over-long idempotency key is refused locally")
     func overLongKeyIsRefused() async throws {
         let stubs = StubProtocol.Session()

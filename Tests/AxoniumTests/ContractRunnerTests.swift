@@ -50,6 +50,8 @@ struct ContractRunnerTests {
                 let result = try await invoke(operation: operation, case: testCase, client: client)
                 problems += checkCounts(
                     expect, stubs: stubs, meta: nil, id: id, path: endpoint(for: operation))
+                problems += checkRequestHeaders(
+                    expect, stubs: stubs, id: id, path: endpoint(for: operation))
                 for (path, wanted) in expect["fields"] as? [String: Any] ?? [:] {
                     let got = resolve(path, in: result)
                     if !matches(got, wanted) {
@@ -91,7 +93,8 @@ struct ContractRunnerTests {
 
             do {
                 let (client, stubs) = try makeClient(testCase)
-                let stream = try await client.chatStream(chatRequest(testCase))
+                let stream = try await client.chatStream(
+                    chatRequest(testCase), idempotencyKey: idempotencyKey(testCase))
                 var chunks = 0
                 for try await _ in stream { chunks += 1 }
 
@@ -104,6 +107,8 @@ struct ContractRunnerTests {
                 problems += await checkUsage(expect, stream: stream, id: id)
                 problems += await checkToolCalls(expect, stream: stream, id: id)
                 problems += checkCounts(expect, stubs: stubs, meta: stream.meta, id: id)
+                problems += checkRequestHeaders(
+                    expect, stubs: stubs, id: id, path: "/v1/chat/completions")
             } catch {
                 problems.append("\(id): threw \(error)")
             }
@@ -386,6 +391,45 @@ struct ContractRunnerTests {
         stubs.stub(path: path, sequence)
     }
 
+    /// Checks what the SDK **sent**, where a case states it.
+    ///
+    /// Every other assertion in this file is about what came back, and that direction is blind to
+    /// a whole class of fault. A key the SDK drops turns a retry into a second billable
+    /// generation; a key the SDK *invents* makes a retry replay a stale result instead of
+    /// generating; an instance pin nobody asked for takes the caller out of load balancing and
+    /// out of failover without saying so. None of the three is visible in a response.
+    private func checkRequestHeaders(
+        _ expect: [String: Any], stubs: StubProtocol.Session, id: String, path: String
+    ) -> [String] {
+        guard
+            expect["request_headers"] != nil || expect["request_headers_absent"] != nil
+        else { return [] }
+
+        var problems: [String] = []
+        guard let sent = stubs.requests(to: path).first else {
+            return ["\(id): no request reached \(path), so nothing can be said about its headers"]
+        }
+        // HTTP header names are case-insensitive and URLSession does not promise a casing.
+        let headers = Dictionary(
+            sent.headers.map { ($0.key.lowercased(), $0.value) }, uniquingKeysWith: { _, l in l })
+
+        for (name, want) in expect["request_headers"] as? [String: String] ?? [:] {
+            let got = headers[name.lowercased()]
+            if got != want {
+                problems.append("\(id): sent \(name)=\(got ?? "nothing"), expected \(want)")
+            }
+        }
+        for name in expect["request_headers_absent"] as? [String] ?? [] {
+            if let got = headers[name.lowercased()] {
+                problems.append(
+                    "\(id): sent \(name)=\(got), which nobody asked for — an invented key "
+                        + "replays a stale result, and an invented instance pin leaves the caller "
+                        + "outside load balancing and failover")
+            }
+        }
+        return problems
+    }
+
     /// Checks `expect.requests` and `expect.attempts` where a case states them.
     ///
     /// The two are different facts and both are worth pinning. `requests` is what the server
@@ -416,7 +460,9 @@ struct ContractRunnerTests {
         async throws -> Any
     {
         switch operation {
-        case "chat.completions.create": return try await client.chat(chatRequest(testCase))
+        case "chat.completions.create":
+            return try await client.chat(
+                chatRequest(testCase), idempotencyKey: idempotencyKey(testCase))
         case "models.list": return try await client.models()
         case "models.mine": return try await client.modelsMine()
         case "embeddings.create":
@@ -458,6 +504,11 @@ struct ContractRunnerTests {
             model: request["model"] as? String ?? "m",
             messages: messages.isEmpty ? [.user("hi")] : messages,
             maxTokens: request["max_tokens"] as? Int)
+    }
+
+    /// The idempotency key a case asks the SDK to send, if any.
+    private func idempotencyKey(_ testCase: [String: Any]) -> String? {
+        (testCase["request"] as? [String: Any])?["idempotency_key"] as? String
     }
 
     private func checkUsage(_ expect: [String: Any], stream: ChatStream, id: String) async
