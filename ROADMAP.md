@@ -35,6 +35,12 @@ Embeddings, rerank, images, usage and rate-limit snapshots landed with M1 — th
 corpus, and leaving them out would have meant a runner that skips cases. What is left:
 
 - `TokenClaims` surfaced on the client rather than only as a type.
+- **Teach the contract runner an ordered response *sequence*** (`responses`) and the
+  `expect.requests` count, then bump the corpus to v20. Two cases need it, both about stream
+  retries — see below. Until then the corpus stays pinned below v20, because a runner that reads only
+  `case["response"]` would skip or misreport them.
+- **Reopen a stream rejected before it begins**, per the decision below. The status check is already
+  there; the retry is not.
 - `X-Prometheus-Ignored-Parameters`, once the four SDKs decide it together.
 - `predict(model:body:)` for the pass-through route, which no SDK implements yet.
 
@@ -50,9 +56,9 @@ One place left where matching the other three is a choice rather than a default:
 
 ## Decided — stream retries
 
-Settled on 2026-09-27 (`AXO-111` in `Root1V/axonium-sdk`, agreed in `A-02`), so this package is born
-with the behaviour instead of inheriting the tie. The tie was real: Python made one attempt, Go and
-Rust made three, and all three documented never retrying.
+Settled on 2026-09-27 (`AXO-111` in `Root1V/axonium-sdk`, agreed in `A-02`), so the behaviour was
+decided rather than inherited. The tie was real: Python made one attempt, Go and Rust made three, and
+all three documented never retrying.
 
 - **A rejection that arrives *instead of* the stream is retried like any other request**, honouring
   `Retry-After`. The gateway reads the engine's status before the `200`/`text/event-stream` headers
@@ -65,9 +71,15 @@ Rust made three, and all three documented never retrying.
 Only expressible since `PRM-143`: before it, a stream rejected before starting came back as a `200`
 whose body was nothing but `data: [DONE]`, indistinguishable from a legitimately empty answer.
 
+`chatStream` already reads the status before parsing SSE, so the rejection is recognised; what the
+retry adds is reopening it.
+
 Manifest **v20** pins both halves — `stream-retried-when-rejected-before-it-begins` and
 `stream-not-retried-once-it-has-begun`. Both need something the corpus did not have before: a case
 serving an ordered *sequence* of responses, and an `expect.requests` count of how many reached the
-server. **A runner that ignores `responses` and serves only the first will pass the second case and
-fail the first**, which is the right way round but worth knowing before the HTTP client is written.
-The count, not the SDK's own `attempts`, is the assertion that would have caught the divergence.
+server. The count, not the SDK's own `attempts`, is the assertion that would have caught the
+divergence — an SDK can be wrong about what it reports while the server's count is the fact.
+
+**This runner reads `case["response"]` and knows nothing of `responses`.** The corpus is still pinned
+below v20, so nothing fails yet; bumping it without teaching the runner the sequence shape would make
+the two cases fail for the wrong reason, or skip silently, which is worse. See M2.
