@@ -27,7 +27,8 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
     final class Session: @unchecked Sendable {
         let id: String
         private let lock = NSLock()
-        private var stubs: [String: Stub] = [:]
+        private var stubs: [String: [Stub]] = [:]
+        private var served: [String: Int] = [:]
         private var recorded: [Recorded] = []
 
         struct Recorded: Sendable {
@@ -43,10 +44,24 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
 
         deinit { StubProtocol.unregister(id) }
 
-        func stub(path: String, _ stub: Stub) {
+        func stub(path: String, _ single: Stub) {
+            stub(path: path, [single])
+        }
+
+        /// Registers an ordered sequence for a path: the first request gets the first entry, and
+        /// so on, with the last repeating once the sequence runs out.
+        ///
+        /// A sequence is what a retry case needs and a single stub cannot express — "rejected,
+        /// then served" is two different answers to the same request. The last entry repeats
+        /// rather than erroring so that a case asserting *one* request still has something to
+        /// serve if the SDK wrongly makes a second: the assertion should then fail on the
+        /// request count, which names the fault, rather than on a transport error, which does
+        /// not.
+        func stub(path: String, _ sequence: [Stub]) {
             lock.lock()
             defer { lock.unlock() }
-            stubs[path] = stub
+            stubs[path] = sequence
+            served[path] = 0
         }
 
         /// A token response good enough for any test that is not about tokens.
@@ -60,10 +75,14 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
                 ))
         }
 
-        func lookup(_ path: String) -> Stub? {
+        /// Takes the next answer for a path, advancing the sequence.
+        func nextStub(_ path: String) -> Stub? {
             lock.lock()
             defer { lock.unlock() }
-            return stubs[path]
+            guard let sequence = stubs[path], !sequence.isEmpty else { return nil }
+            let index = min(served[path] ?? 0, sequence.count - 1)
+            served[path] = (served[path] ?? 0) + 1
+            return sequence[index]
         }
 
         func record(_ entry: Recorded) {
@@ -125,7 +144,7 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
         }
         session.record(.init(path: path, headers: request.allHTTPHeaderFields ?? [:], body: body))
 
-        guard let stub = session.lookup(path) else {
+        guard let stub = session.nextStub(path) else {
             return fail("no stub registered for \(path)")
         }
 

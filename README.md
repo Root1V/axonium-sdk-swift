@@ -3,7 +3,7 @@
 The Axonium SDK for the Prometheus inference platform, for macOS, iOS, iPadOS, visionOS and
 watchOS.
 
-> **Status: M1.** The client works and replays all 40 cases of the shared contract corpus. Not
+> **Status: M1.** The client works and replays all 44 cases of the shared contract corpus. Not
 > yet tagged, so it cannot be resolved as a package dependency — see [ROADMAP.md](ROADMAP.md)
 > for what M2 and 1.0 add.
 
@@ -116,9 +116,9 @@ swift test
 | Suite | What it holds |
 |---|---|
 | Error catalog parity | Every suffix in `errors.json` maps to an `ErrorKind`, with the catalogued retryability, in both directions. An unknown suffix falls back by status rather than failing. |
-| Error envelopes | All 15 gateway error cases and all 8 token-endpoint cases, decoded from the recorded bodies. |
-| Contract runner | All 14 success cases and all 7 streaming cases, replayed through the real client over `URLProtocol`. |
-| Stream rejection | The two things the corpus does **not** pin: a stream refused before it begins, and the idempotency key reaching the wire. Both were found by mutation — breaking them left all 40 manifest cases passing. |
+| Error envelopes | All 17 gateway error cases and all 8 token-endpoint cases, decoded from the recorded bodies. |
+| Contract runner | All 14 success cases, all 9 streaming cases, and the 2 error cases whose operation is a stream — replayed through the real client over `URLProtocol`. A case can serve an ordered sequence of responses and assert how many requests the server actually saw. |
+| Idempotency key | The one thing the corpus still does not pin: that the key reaches the wire. Its replay case asserts on what comes back, so an SDK that never sent one would pass it. |
 | Corpus coverage | That every case in the manifest is claimed by a suite. Each suite above passes against an empty selection; this is the guard on the selections. |
 
 ## Privacy
