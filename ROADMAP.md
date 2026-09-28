@@ -10,7 +10,7 @@ Building the client first is the tempting order and the wrong one. The claim thi
 is *parity*, and parity is not something you add at the end — it is a corpus you are held to from
 the first commit. Starting here also means the runner exists before there is any code to excuse.
 
-## M1 — MVP
+## M1 — MVP · **done**
 
 - `AxoniumConfiguration`: code-first, no environment variables required. An app on macOS or iOS
   has no `.env` and no process environment worth reading, so every setting must be passable in
@@ -31,7 +31,12 @@ of whether `/health` gets a contract is open with the platform team.
 
 ## M2 — parity
 
-Embeddings, rerank, images, usage, rate-limit snapshots, token claims.
+Embeddings, rerank, images, usage and rate-limit snapshots landed with M1 — they are in the
+corpus, and leaving them out would have meant a runner that skips cases. What is left:
+
+- `TokenClaims` surfaced on the client rather than only as a type.
+- `X-Prometheus-Ignored-Parameters`, once the four SDKs decide it together.
+- `predict(model:body:)` for the pass-through route, which no SDK implements yet.
 
 ## M3 — 1.0
 

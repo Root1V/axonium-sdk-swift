@@ -79,4 +79,9 @@ enum Corpus {
     static func cases() throws -> [[String: Any]] {
         try manifest()["cases"] as? [[String: Any]] ?? []
     }
+
+    /// The cases whose `expect.kind` is this one.
+    static func cases(kind: String) throws -> [[String: Any]] {
+        try cases().filter { ($0["expect"] as? [String: Any])?["kind"] as? String == kind }
+    }
 }

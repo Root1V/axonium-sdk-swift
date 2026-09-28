@@ -18,6 +18,47 @@
 
 Everything is `Sendable` and builds under Swift 6 strict concurrency with no warnings.
 
+### M1 — the client
+
+`AxoniumClient`, with `chat`, `chatStream`, `models`, `modelsMine`, `embeddings`, `images`,
+`rerank` and `usage`. All 40 cases of the shared manifest now replay through the real client over
+`URLProtocol`, so what is under test is its own request building, header reading and
+`URLSession.bytes` streaming rather than a fake sitting where the network should be.
+
+- **Configured in code.** An app has no `.env` and no useful process environment;
+  `fromEnvironment()` exists for command-line tools and is never required.
+- **`ClientCredentialsTokenProvider` is an `actor`**, so ten concurrent calls on a cold client
+  ask for one token rather than ten. Refresh ahead at 80% of the lifetime or under 30s, measured
+  on a monotonic clock so a skewed peer cannot make a live token look expired, and the
+  **granted** scope read back rather than the requested one assumed.
+- **`TokenProvider` is a protocol**, so an app can run in governed mode and this SDK never sees
+  a client secret.
+- **A private CA as data**, appended to the system anchors and still evaluated. No path returns a
+  credential without `SecTrustEvaluateWithError` succeeding, which is the shape every "just
+  disable verification for dev" bug takes.
+- Streams cancel cooperatively, carry their partial content through a failure, reassemble tool
+  calls from fragments that are individually invalid JSON, and derive usage from `timings` when
+  no frame reported any — marked `estimated`, so nobody bills against a guess.
+
+### Found while building it
+
+**Two behaviours the corpus does not pin**, both discovered by mutation rather than by reading:
+
+    the stream stops checking the status before parsing  -> all 40 cases still passed
+    the idempotency key never reaches the wire           -> all 40 cases still passed
+
+The first is the one that matters. Since `PRM-143` a streamed request refused *before* the stream
+begins returns the engine's real status, and an SDK that starts parsing SSE because it asked for
+a stream turns every refusal into a silent empty answer. Nothing in the manifest exercises it.
+Reported upstream; `StreamRejectionTests` holds the line here meanwhile — which is the same
+half-measure that let the correlation-id bug come back, and is written down as such.
+
+**And the test harness had a race of its own.** `StubProtocol` keyed its stubs by path alone, and
+Swift Testing runs suites in parallel: two suites answered each other's requests, and a stream
+test failed reading another suite's fixture. Stubs now belong to a session identified by a header,
+so a test can only reach its own. Fixed rather than serialised — serialising would have hidden it
+and kept the shared state.
+
 ### Corpus bumped to 2026-09-27
 
 The submodule now pins `931e615`: guide revision `2026-09-27`, 32 catalogued errors, manifest v19.
