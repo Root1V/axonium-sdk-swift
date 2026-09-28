@@ -22,16 +22,23 @@ struct ContractRunnerTests {
     @Test("every non-streaming success case produces the fields the manifest expects")
     func successCases() async throws {
         var problems: [String] = []
+        let selected = try Corpus.cases(kind: "ok").filter {
+            // token.fetch cases assert on the REQUEST rather than a decoded result; they have
+            // their own test below, and are the one deliberate exclusion here.
+            ($0["operation"] as? String) != "token.fetch"
+        }
+        var replayed = 0
 
-        for testCase in try Corpus.cases(kind: "ok") {
+        for testCase in selected {
             let id = testCase["id"] as? String ?? "?"
             let operation = testCase["operation"] as? String ?? ""
-            // token.fetch cases assert on the REQUEST rather than a decoded result; they have
-            // their own test below.
-            guard operation != "token.fetch" else { continue }
             guard let response = testCase["response"] as? [String: Any],
                 let expect = testCase["expect"] as? [String: Any]
-            else { continue }
+            else {
+                problems.append(unreadable(testCase, id: id))
+                continue
+            }
+            replayed += 1
 
             do {
                 let (client, stubs) = try makeClient(response: response)
@@ -58,6 +65,7 @@ struct ContractRunnerTests {
             }
         }
 
+        #expect(replayed == selected.count, arithmetic(replayed, of: selected.count))
         #expect(problems.isEmpty, "\(problems.joined(separator: "\n"))")
     }
 
@@ -66,12 +74,18 @@ struct ContractRunnerTests {
     @Test("every streaming case assembles to the content, chunk count and usage expected")
     func streamCases() async throws {
         var problems: [String] = []
+        let selected = try Corpus.cases(kind: "stream")
+        var replayed = 0
 
-        for testCase in try Corpus.cases(kind: "stream") {
+        for testCase in selected {
             let id = testCase["id"] as? String ?? "?"
             guard let response = testCase["response"] as? [String: Any],
                 let expect = testCase["expect"] as? [String: Any]
-            else { continue }
+            else {
+                problems.append(unreadable(testCase, id: id))
+                continue
+            }
+            replayed += 1
 
             do {
                 let (client, _) = try makeClient(response: response)
@@ -92,18 +106,25 @@ struct ContractRunnerTests {
             }
         }
 
+        #expect(replayed == selected.count, arithmetic(replayed, of: selected.count))
         #expect(problems.isEmpty, "\(problems.joined(separator: "\n"))")
     }
 
     @Test("an in-band error surfaces as an interruption carrying what had arrived")
     func streamErrorCases() async throws {
         var problems: [String] = []
+        let selected = try Corpus.cases(kind: "stream_error")
+        var replayed = 0
 
-        for testCase in try Corpus.cases(kind: "stream_error") {
+        for testCase in selected {
             let id = testCase["id"] as? String ?? "?"
             guard let response = testCase["response"] as? [String: Any],
                 let expect = testCase["expect"] as? [String: Any]
-            else { continue }
+            else {
+                problems.append(unreadable(testCase, id: id))
+                continue
+            }
+            replayed += 1
 
             let (client, _) = try makeClient(response: response)
             do {
@@ -121,6 +142,7 @@ struct ContractRunnerTests {
             }
         }
 
+        #expect(replayed == selected.count, arithmetic(replayed, of: selected.count))
         #expect(problems.isEmpty, "\(problems.joined(separator: "\n"))")
     }
 
@@ -129,13 +151,20 @@ struct ContractRunnerTests {
     @Test("the token request is form-encoded and carries the scope the manifest expects")
     func tokenRequestCases() async throws {
         var problems: [String] = []
+        let selected = try Corpus.cases(kind: "ok").filter {
+            ($0["operation"] as? String) == "token.fetch"
+        }
+        var replayed = 0
 
-        for testCase in try Corpus.cases(kind: "ok") {
+        for testCase in selected {
             let id = testCase["id"] as? String ?? "?"
-            guard (testCase["operation"] as? String) == "token.fetch",
-                let expect = testCase["expect"] as? [String: Any],
+            guard let expect = testCase["expect"] as? [String: Any],
                 let response = testCase["response"] as? [String: Any]
-            else { continue }
+            else {
+                problems.append(unreadable(testCase, id: id))
+                continue
+            }
+            replayed += 1
 
             let stubs = StubProtocol.Session()
             try stubFrom(response, path: "/oauth2/token", into: stubs)
@@ -156,6 +185,7 @@ struct ContractRunnerTests {
                 problems.append("\(id): the client never asked for a token")
                 continue
             }
+            _ = operationName(testCase)
             if let wantType = expect["request_content_type"] as? String,
                 sent.headers["Content-Type"] != wantType
             {
@@ -174,12 +204,43 @@ struct ContractRunnerTests {
             }
         }
 
+        #expect(replayed == selected.count, arithmetic(replayed, of: selected.count))
         #expect(problems.isEmpty, "\(problems.joined(separator: "\n"))")
     }
 
     // MARK: - harness
 
     struct UnsupportedOperation: Error { var message: String }
+
+    /// Reports a case this runner selected but could not read, instead of stepping over it.
+    ///
+    /// Every loop here used to `continue` past one. That is how a case in a shape the runner
+    /// does not know yet — `responses`, an ordered sequence, added to the corpus in v20 —
+    /// disappears: selected, never replayed, and no assertion the poorer, because a suite that
+    /// collects problems finds none in a case it never touched.
+    private func unreadable(_ testCase: [String: Any], id: String) -> String {
+        let keys = testCase.keys.sorted().joined(separator: ", ")
+        return """
+            \(id): this runner selected the case and cannot read it. It has no `response` \
+            dictionary; its keys are [\(keys)]. If that includes `responses`, the case serves an \
+            ordered sequence and this runner has not learned that shape yet.
+            """
+    }
+
+    /// The arithmetic that makes a skip impossible to hide.
+    ///
+    /// Counting is the assertion, because every other check in this file passes vacuously
+    /// against a case that was never replayed.
+    private func arithmetic(_ replayed: Int, of selected: Int) -> Comment {
+        let message =
+            "replayed \(replayed) of \(selected) selected cases; the missing ones were skipped, "
+            + "and a skipped case asserts nothing while looking exactly like a passing one"
+        return Comment(rawValue: message)
+    }
+
+    private func operationName(_ testCase: [String: Any]) -> String {
+        testCase["operation"] as? String ?? "?"
+    }
 
     /// A client and the stub session it talks to, isolated from every other test.
     private func makeClient(response: [String: Any]) throws -> (AxoniumClient, StubProtocol.Session)

@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+**A case this runner cannot read is now a failure, where it used to be a skip.**
+
+Every replay loop selected its cases, then `continue`d past any it could not parse. Each suite
+collects problems and asserts the list is empty — and finds none in a case it never touched, so
+the suite stayed green while quietly covering less.
+
+Measured by adding a case in the shape v20 introduced, an ordered `responses` sequence instead of
+a single `response`:
+
+    the size assertion caught it, because its counts are written by hand
+    updating those counts, which is exactly what a corpus bump does -> green, case never replayed
+
+Each loop now counts what it replayed and asserts it against what it selected, so a skip fails by
+arithmetic rather than by anybody noticing. The report names the case and its keys:
+
+    SONDA-forma-v20: this runner selected the case and cannot read it. It has no `response`
+    dictionary; its keys are [expect, id, operation, request, responses]. If that includes
+    `responses`, the case serves an ordered sequence and this runner has not learned that
+    shape yet.
+
+Reading that shape, and the corpus bump to v20, is the next change. This one makes the bump safe
+to attempt: the failure it would otherwise produce is silence.
+
 ## 0.1.1
 
 **`PrivacyInfo.xcprivacy`**, which Apple requires from a third-party SDK before an app embedding
