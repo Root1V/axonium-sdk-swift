@@ -29,6 +29,11 @@ let package = Package(
             // An app shipping through App Store review inherits every transitive dependency's
             // privacy manifest and signature, so each one is a cost its consumer pays.
             dependencies: [],
+            // Apple requires a privacy manifest from a third-party SDK before an app embedding
+            // it can be submitted, and it has to ship inside the target's resources to be found.
+            // `.copy` rather than `.process`: the file must arrive byte for byte with the name
+            // Apple looks for, and processing could rename or transform it.
+            resources: [.copy("PrivacyInfo.xcprivacy")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(

@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 0.1.1
+
+**`PrivacyInfo.xcprivacy`**, which Apple requires from a third-party SDK before an app embedding
+it can be submitted. It was the one missing piece that blocked *shipping* rather than building.
+
+Everything in it is empty or `false`, and each answer was checked rather than assumed. The
+required-reason audit found no `UserDefaults`, no file timestamps, no disk space, no active
+keyboard and no boot-time API; this package does not touch the filesystem.
+
+`NSPrivacyCollectedDataTypes` is empty because this SDK collects nothing of its own — it
+transmits what the app hands it to an address the app configures. **That is not an exemption for
+the app**, and the README now says so at length, along with the two things the platform does
+retain: usage rows hold counts and never content, and an `Idempotency-Key` retains the whole
+response for 24 hours. The second is conditional on a choice the app makes, and is the one worth
+a line in the app's own declaration.
+
+One judgement call is written down rather than buried: `ContinuousClock` is used for token
+expiry and is not on Apple's required-reason list, so no reason is declared — with the exact
+entry that would be needed if a future scan disagreed.
+
 ### M0 — the contract layer
 
 - `ErrorKind`, covering every suffix in `spec/errors.json`, with retryability, and a status-keyed

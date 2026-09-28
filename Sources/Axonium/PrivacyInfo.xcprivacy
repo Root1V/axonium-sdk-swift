@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  What this SDK declares, and why each answer is what it is, is written out in README.md
+	  under "Privacy". The short version:
+
+	  This SDK is a transport. It sends what the app gives it to a gateway address the APP
+	  configures, on a platform the app's own organisation operates. It keeps nothing: no cache,
+	  no cookies, no disk writes, and URLSessionConfiguration.ephemeral by default.
+
+	  An SDK's manifest declares what the SDK collects. It does NOT cover what the app chooses to
+	  send through it. An app putting user content into a prompt is collecting that content and
+	  must declare it in its OWN PrivacyInfo.xcprivacy. Read the README before assuming this file
+	  is enough.
+	-->
+
+	<!-- No tracking, and no data joined with data from other apps or brokers. -->
+	<key>NSPrivacyTracking</key>
+	<false/>
+
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+
+	<!--
+	  Empty because this SDK collects nothing of its own. Every byte it transmits was handed to
+	  it by the app, addressed to a host the app named. See the README for what the platform
+	  retains on the other end, which is the app's declaration to make and not this one.
+	-->
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+
+	<!--
+	  Empty, and audited rather than assumed. This SDK uses no API in any required-reason
+	  category: no UserDefaults, no file timestamps, no disk space, no active keyboard, no boot
+	  time. It does not touch the filesystem at all.
+	-->
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array/>
+</dict>
+</plist>

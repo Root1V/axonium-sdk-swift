@@ -121,6 +121,59 @@ swift test
 | Stream rejection | The two things the corpus does **not** pin: a stream refused before it begins, and the idempotency key reaching the wire. Both were found by mutation — breaking them left all 40 manifest cases passing. |
 | Corpus coverage | That every case in the manifest is claimed by a suite. Each suite above passes against an empty selection; this is the guard on the selections. |
 
+## Privacy
+
+This package ships a `PrivacyInfo.xcprivacy`, which Apple requires from a third-party SDK before
+an app embedding it can go to the App Store or TestFlight. It declares:
+
+| | |
+|---|---|
+| `NSPrivacyTracking` | `false` — nothing here tracks, and nothing is joined with data from other apps or brokers |
+| `NSPrivacyTrackingDomains` | empty |
+| `NSPrivacyCollectedDataTypes` | empty |
+| `NSPrivacyAccessedAPITypes` | empty — audited, not assumed: no `UserDefaults`, no file timestamps, no disk space, no active keyboard, no boot time. This package does not touch the filesystem at all. |
+
+**Read the next part before you assume this file covers your app.**
+
+### What this manifest does not cover
+
+An SDK's manifest declares what **the SDK** collects. This one is a transport: it sends what
+your app hands it, to a gateway address your app configures, on a platform your own organisation
+operates. It keeps nothing — no cache, no cookies, no disk writes,
+`URLSessionConfiguration.ephemeral` by default, and nothing is ever logged.
+
+**Your app is the one collecting.** If a prompt contains a user's document, message, filename or
+photo, your app is transmitting that, and it is your app's `PrivacyInfo.xcprivacy` that has to
+say so. `NSPrivacyCollectedDataTypes` being empty here is a statement about this package, not an
+exemption for the binary it ends up in.
+
+### What the platform retains, so you can write your own declaration
+
+Two facts, both from the platform's integration guide and verified against a deployment:
+
+- **The usage row holds counts, never content.** `request_id`, `model`, `request_kind`, token
+  counts, `cost_usd`, `instance_id`, `created_at`. No prompt, no completion, no input of any
+  kind. Retained for billing.
+- **An `Idempotency-Key` retains the whole response for 24 hours**, so that a retry can replay
+  it instead of generating again — the SSE body included, up to 1 MiB. The key is also
+  fingerprinted against the request payload.
+
+That second one matters and is **conditional on a choice your app makes**. Sending no key means
+nothing is retained beyond the request; sending one means the generated answer sits in the
+platform's store for a day. Neither is wrong, but only one of them is a thing your users might
+reasonably want to know about, and the SDK cannot make that call for you.
+
+### One judgement call, written down rather than buried
+
+`ClientCredentialsTokenProvider` measures token expiry with `ContinuousClock`, so that a skewed
+peer or an NTP step cannot make a live token look expired. Apple's required-reason category for
+system boot time names `systemUptime` and `mach_absolute_time()`; `ContinuousClock` is neither,
+so no reason is declared for it. Declaring a spurious one would be its own false statement.
+
+If a future App Store scan ever flags it, the fix is a single entry —
+`NSPrivacyAccessedAPICategorySystemBootTime` with reason `35F9.1` — and we would rather you know
+where it would go than discover the question during review.
+
 ## Requirements
 
 Swift 6, strict concurrency, no warnings. macOS 14, iOS 17, iPadOS 17, visionOS 1, watchOS 10.
