@@ -16,7 +16,23 @@ func resolve(_ path: String, in value: Any) -> Any? {
     if let list = value as? ImageList { return resolve(path, in: list) }
     if let list = value as? RerankList { return resolve(path, in: list) }
     if let row = value as? UsageRow { return resolve(path, in: row) }
+    if let stream = value as? ChatStream { return resolve(path, in: stream) }
     return nil
+}
+
+/// Resolves a path against a finished stream.
+///
+/// **`meta.*` only, and deliberately.** A stream's content, chunk count, usage and tool calls
+/// already have dedicated keys in the manifest and are asserted through those; what had no route
+/// at all was `meta` — `request_id`, `trace_id`, `rate_limit`, and the two replay flags. All four
+/// SDKs' runners could assert `fields` on a non-streaming case and none could on a streamed one,
+/// so a stream that dropped its entire `meta` passed every case in the corpus.
+///
+/// Reading `content` here too would be a second way to say something the manifest already says
+/// one way, which is how two spellings of one assertion drift apart.
+private func resolve(_ path: String, in stream: ChatStream) -> Any? {
+    guard path.hasPrefix("meta.") else { return nil }
+    return resolveMeta(String(path.dropFirst(5)), stream.meta)
 }
 
 private func resolve(_ path: String, in list: EmbeddingList) -> Any? {

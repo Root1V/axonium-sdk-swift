@@ -109,6 +109,19 @@ struct ContractRunnerTests {
                 problems += checkCounts(expect, stubs: stubs, meta: stream.meta, id: id)
                 problems += checkRequestHeaders(
                     expect, stubs: stubs, id: id, path: "/v1/chat/completions")
+                // `fields` on a streamed case had no route in any of the four runners, so a
+                // stream that dropped its whole `meta` — ids, rate limit, replay flags — passed
+                // every case in the corpus. Resolved against the stream itself, so the day a
+                // case asserts `meta.idempotent_replay` on a stream, it is read rather than
+                // stepped over.
+                for (path, wanted) in expect["fields"] as? [String: Any] ?? [:] {
+                    let got = resolve(path, in: stream)
+                    if !matches(got, wanted) {
+                        problems.append(
+                            "\(id): \(path) was \(got.map(String.init(describing:)) ?? "nil"), "
+                                + "expected \(wanted)")
+                    }
+                }
             } catch {
                 problems.append("\(id): threw \(error)")
             }
@@ -646,6 +659,40 @@ struct CoverageTests {
         let catalogued =
             (try Corpus.errorCatalog()["gateway_errors"] as? [[String: Any]] ?? []).count
         #expect(catalogued == 32, "the catalog has \(catalogued) errors, expected 32")
+    }
+
+    /// Nothing a streamed case asserts may be silently unread.
+    ///
+    /// The runner reads a fixed set of keys out of `expect`. A key it does not know is not an
+    /// error to it — it is simply never looked at, which is the failure this whole file keeps
+    /// meeting. `fields` on a streamed case was exactly that until it was implemented; this
+    /// names the set so the next addition fails here rather than passing quietly.
+    @Test("every key a streamed case asserts is one this runner reads")
+    func noStreamedAssertionIsIgnored() throws {
+        // Keyed on `kind`, because a streamed case is replayed by whichever suite owns its kind
+        // and each reads a different set. A `kind: error` case on a stream goes through
+        // `streamedErrorCases`, not through the stream loop.
+        let shared: Set<String> = ["kind", "requests", "attempts", "request_headers",
+                                   "request_headers_absent"]
+        let byKind: [String: Set<String>] = [
+            "stream": ["content", "chunks", "usage", "tool_calls", "fields"],
+            "stream_error": ["partial_content", "error"],
+            "error": ["error_type_suffix", "retryable", "has_request_id", "has_trace_id",
+                      "fields"],
+        ]
+        var unread: [String] = []
+        for testCase in try Corpus.cases() {
+            guard (testCase["operation"] as? String) == "chat.completions.stream",
+                let expect = testCase["expect"] as? [String: Any],
+                let kind = expect["kind"] as? String
+            else { continue }
+            let id = testCase["id"] as? String ?? "?"
+            let read = shared.union(byKind[kind] ?? [])
+            for key in expect.keys where !read.contains(key) && !key.hasPrefix("$") {
+                unread.append("\(id): a \(kind) case asserts `\(key)`, which this runner never reads")
+            }
+        }
+        #expect(unread.isEmpty, "\(unread.joined(separator: "\n"))")
     }
 
     /// Every operation the manifest names is one this SDK can actually invoke.
