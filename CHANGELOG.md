@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+**A streamed case can assert `meta`, which no runner in this family could do.**
+
+A peer measured it across the other three: of nine streamed cases in the corpus, zero can assert
+`expect.fields` in any runner — the non-streaming branch has always had it, the streamed branch
+never did. So `request_id`, `trace_id`, `rate_limit` and both replay flags were unassertable on a
+stream, and a stream dropping its entire `meta` passed all 44 cases. This runner had the same
+gap, and would have ignored such a case in silence.
+
+The stream branch now resolves `fields` against the stream, `meta.*` only: content, chunks, usage
+and tool calls already have dedicated keys, and a second spelling of one assertion is how two
+spellings drift. Verified by adding the assertion the corpus is missing and re-running:
+
+    stream-idempotent-replay asserting meta.idempotent_replay_of
+      -> read, compared, and reported — the capability works
+
+A new guard names, per `kind`, every key a streamed case may assert, so the next addition the
+runner does not read fails here instead of passing quietly.
+
+One detail the probe turned up, for whoever fills the gap upstream: the streamed replay case's
+recorded response carries only `Idempotent-Replay: true`. Its chat sibling also carries
+`X-Request-ID` and `X-Idempotent-Replay-Of`. Asserting `_of` on the streamed one needs a new
+recording, not just a new assertion.
+
+
 The runner asserts what the SDK **sent**, not only what came back, and the corpus is at v22.
 
 Manifest v22 added `expect.request_headers` and `expect.request_headers_absent`. The second
