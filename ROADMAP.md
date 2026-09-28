@@ -46,7 +46,10 @@ corpus, and leaving them out would have meant a runner that skips cases. What is
 
 ## M3 — 1.0
 
-100% of the corpus, DocC, `PrivacyInfo.xcprivacy`, iOS CI.
+DocC, and 100% of the corpus once M2's sequence-shaped cases are readable here.
+
+`PrivacyInfo.xcprivacy` shipped early, in `0.1.1`: it blocked *submitting* rather than building,
+which made it the one remaining item worth pulling forward. iOS CI has run since M0.
 
 ## Not inherited without a decision
 
