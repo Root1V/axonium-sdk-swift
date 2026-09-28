@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+The runner asserts what the SDK **sent**, not only what came back, and the corpus is at v22.
+
+Manifest v22 added `expect.request_headers` and `expect.request_headers_absent`. The second
+direction is the one worth having: a key the SDK **invents** makes a retry replay a stale result
+instead of generating, and an instance pin nobody asked for takes the caller out of load
+balancing and out of failover. Neither is visible in any response. Mutated in all three
+directions:
+
+    the key never reaches the wire     -> sent Idempotency-Key=nothing, expected k
+    the SDK invents a key              -> sent Idempotency-Key=inventada, which nobody asked for
+    the SDK invents an instance pin    -> sent X-Prometheus-Instance=#1, which nobody asked for
+
+`IdempotencyKeyTests` shrank rather than went. The part v22 replaced — the key reaching the wire
+on both a completion and a stream — is gone, in the commit that put the replacement to work. Two
+things stayed, and one of them only after measuring:
+
+- **A streamed replay is still not pinned by the corpus.** `chat-idempotent-replay` asserts
+  `meta.idempotent_replay`; `stream-idempotent-replay` asserts content, chunks, usage and the
+  sent key, but nothing about the replay flags. Dropping the meta from the stream path entirely
+  leaves all 44 cases green. Reported upstream.
+- An over-long key being refused **before** a request is not expressible as a contract case at
+  all: the assertion is that no request happens, and a case describes a request and its answer.
+
+
 **A stream refused before it begins is now reopened, and the corpus is what found that it was not.**
 
 The runner learned two things the manifest gained in v20: a case can serve an ordered *sequence* of

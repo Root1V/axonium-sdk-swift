@@ -117,8 +117,8 @@ swift test
 |---|---|
 | Error catalog parity | Every suffix in `errors.json` maps to an `ErrorKind`, with the catalogued retryability, in both directions. An unknown suffix falls back by status rather than failing. |
 | Error envelopes | All 17 gateway error cases and all 8 token-endpoint cases, decoded from the recorded bodies. |
-| Contract runner | All 14 success cases, all 9 streaming cases, and the 2 error cases whose operation is a stream — replayed through the real client over `URLProtocol`. A case can serve an ordered sequence of responses and assert how many requests the server actually saw. |
-| Idempotency key | The one thing the corpus still does not pin: that the key reaches the wire. Its replay case asserts on what comes back, so an SDK that never sent one would pass it. |
+| Contract runner | All 14 success cases, all 9 streaming cases, and the 2 error cases whose operation is a stream — replayed through the real client over `URLProtocol`. A case can serve an ordered sequence of responses, assert how many requests the server saw, and assert the headers the SDK **sent** — including ones it must not invent. |
+| Idempotency key | What the corpus still does not pin: that a **streamed** replay is flagged as one, and that an over-long key is refused before a round trip. The key reaching the wire moved into the corpus in v22 and left this file. |
 | Corpus coverage | That every case in the manifest is claimed by a suite. Each suite above passes against an empty selection; this is the guard on the selections. |
 
 ## Privacy
