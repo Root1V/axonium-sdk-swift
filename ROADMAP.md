@@ -44,8 +44,30 @@ corpus, and leaving them out would have meant a runner that skips cases. What is
 
 ## Not inherited without a decision
 
-Two places where matching the other three is a choice rather than a default:
+One place left where matching the other three is a choice rather than a default:
 
-- **Stream retries.** Measured on 2026-09-27: Python makes one attempt, Go and Rust make three.
-  All three *document* never retrying. Whatever the four settle on, they settle on it together.
 - **`X-Prometheus-Ignored-Parameters`.** Implemented in none of them.
+
+## Decided — stream retries
+
+Settled on 2026-09-27 (`AXO-111` in `Root1V/axonium-sdk`, agreed in `A-02`), so this package is born
+with the behaviour instead of inheriting the tie. The tie was real: Python made one attempt, Go and
+Rust made three, and all three documented never retrying.
+
+- **A rejection that arrives *instead of* the stream is retried like any other request**, honouring
+  `Retry-After`. The gateway reads the engine's status before the `200`/`text/event-stream` headers
+  exist, so nothing was generated and nothing was billed, and reopening is a first generation rather
+  than a second. It is also the only retry there is: the gateway performs no internal retries on a
+  streamed request, so a `503 backend-unavailable` arrives after one attempt rather than three.
+- **A stream that has already begun is never retried.** The failure arrives in band, part of the
+  answer was delivered, and part was billed. No exceptions in any of the four.
+
+Only expressible since `PRM-143`: before it, a stream rejected before starting came back as a `200`
+whose body was nothing but `data: [DONE]`, indistinguishable from a legitimately empty answer.
+
+Manifest **v20** pins both halves — `stream-retried-when-rejected-before-it-begins` and
+`stream-not-retried-once-it-has-begun`. Both need something the corpus did not have before: a case
+serving an ordered *sequence* of responses, and an `expect.requests` count of how many reached the
+server. **A runner that ignores `responses` and serves only the first will pass the second case and
+fail the first**, which is the right way round but worth knowing before the HTTP client is written.
+The count, not the SDK's own `attempts`, is the assertion that would have caught the divergence.
