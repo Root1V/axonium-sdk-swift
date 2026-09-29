@@ -190,9 +190,12 @@ public struct ChatRequest: Sendable {
     public var toolChoice: JSONValue?
     /// A JSON Schema the answer must satisfy, forwarded verbatim.
     ///
-    /// The answer still arrives as a JSON **string** in the message content — see
-    /// ``AxoniumClient/chat(_:as:idempotencyKey:instance:)`` for the typed layer, and read its
-    /// warning about truncation before relying on it.
+    /// **The answer arrives as a JSON string in the message content, and is not decoded here.**
+    /// Decode it yourself, and check `finishReason` first: a generation stopped by `max_tokens`
+    /// leaves the JSON truncated, and a type that threw from inside its own initialiser would be
+    /// worse than one that hands over what arrived.
+    ///
+    /// This doc used to point at a typed `chat(_:as:)` layer as though it existed. It never did.
     public var responseFormat: JSONValue?
     /// Extra fields to send that this SDK does not model.
     ///

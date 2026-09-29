@@ -388,5 +388,3 @@ public final class AxoniumClient: Sendable {
         }
     }
 }
-
-let userAgent = "axonium-swift/0.1.0"
