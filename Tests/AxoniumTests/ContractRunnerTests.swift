@@ -416,6 +416,7 @@ struct ContractRunnerTests {
     ) -> [String] {
         guard
             expect["request_headers"] != nil || expect["request_headers_absent"] != nil
+                || expect["request_headers_present"] != nil
         else { return [] }
 
         var problems: [String] = []
@@ -430,6 +431,18 @@ struct ContractRunnerTests {
             let got = headers[name.lowercased()]
             if got != want {
                 problems.append("\(id): sent \(name)=\(got ?? "nothing"), expected \(want)")
+            }
+        }
+        // By name, with no value: `Authorization` carries each runner's own test token, so an
+        // exact comparison would pin this suite's fixture rather than the SDK's behaviour. What
+        // matters is that the header is there at all — `GET /v1/models` stopped being public and
+        // one SDK had been skipping the token for it, on the strength of a guide line that still
+        // says otherwise.
+        for name in expect["request_headers_present"] as? [String] ?? [] {
+            if headers[name.lowercased()]?.isEmpty != false {
+                problems.append(
+                    "\(id): sent no \(name) header; this endpoint is authenticated like every "
+                        + "other one, whatever the guide says")
             }
         }
         for name in expect["request_headers_absent"] as? [String] ?? [] {
@@ -673,7 +686,7 @@ struct CoverageTests {
         // and each reads a different set. A `kind: error` case on a stream goes through
         // `streamedErrorCases`, not through the stream loop.
         let shared: Set<String> = ["kind", "requests", "attempts", "request_headers",
-                                   "request_headers_absent"]
+                                   "request_headers_absent", "request_headers_present"]
         let byKind: [String: Set<String>] = [
             "stream": ["content", "chunks", "usage", "tool_calls", "fields"],
             "stream_error": ["partial_content", "error"],
