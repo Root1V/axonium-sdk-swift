@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+**Two defects the Mundus team found by reading the tag, and the guards that would have caught them.**
+
+- **The `User-Agent` announced `0.1.0` from `0.1.1`.** A literal beside the header that sends it,
+  so every diagnostic a gateway operator ran by version counted its users as being on a release
+  they were not on. The number now lives once, in `axoniumVersion`, and a test fails when it falls
+  **behind** the newest git tag. Behind rather than different: between releases it is legitimately
+  ahead, and a check that is red by design gets ignored.
+- **A doc comment pointed at a typed `chat(_:as:)` layer that was never written.** The compiler
+  has nothing to say about a name inside a comment, so it cost a reader the time to go looking —
+  which is the whole damage an invented API name does. The doc now says what actually happens:
+  decode the JSON string yourself, and check `finishReason` first.
+
+A guard now resolves every ``symbol`` reference in the sources against the declared signatures.
+
+**Its first version would not have caught the bug it was written for**, which is worth recording.
+It compared the base name before the `(`, and `chat` exists — only that signature does not.
+Measured by reintroducing the exact reference and watching 23 tests stay green. It compares
+argument labels now:
+
+    ``AxoniumClient/chat(_:as:idempotencyKey:instance:)`` -- no such signature.
+    `chat` exists as: chat(_:idempotencyKey:instance:)
+
+Three false positives were fixed on the way, each of which would have got the check muted rather
+than read: enum cases with associated values are declarations DocC refers to (`api(_:)`), a
+wrapped declaration swallowed the `///` lines inside it and yielded `init(///:///:clientSecret:)`,
+and a default value is itself a call — `timeouts: Timeouts = Timeouts()` truncated the client's
+initialiser to five labels of eight.
+
+
 **A streamed case can assert `meta`, which no runner in this family could do.**
 
 A peer measured it across the other three: of nine streamed cases in the corpus, zero can assert
