@@ -25,19 +25,19 @@ struct IdempotencyKeyTests {
 
     /// A streamed replay has to be recognisable as one, and only this says so.
     ///
-    /// `chat-idempotent-replay` asserts `meta.idempotent_replay` and its `_of`. Its streaming
-    /// sibling, `stream-idempotent-replay`, asserts content, chunk count, usage and the key on
-    /// the wire — but nothing about the replay flags. Measured: dropping the meta from the stream
-    /// path entirely leaves all 44 cases green and fails only here.
+    /// The **flag** moved into the corpus with v23, which gained `expect.fields` on a streamed
+    /// case. What stayed is the pair v23 could not assert, and the reason is not an oversight:
+    /// `stream-idempotent-replay`'s recorded response carries only `Idempotent-Replay`, while its
+    /// chat sibling also captured `X-Request-ID` and `X-Idempotent-Replay-Of`. Asserting those on
+    /// the streamed case needs a new capture, not a new assertion — an expectation written
+    /// against bytes that do not contain them would be invented, and the SDK reporting them empty
+    /// would be right.
     ///
-    /// It matters because the two outcomes come from the same call site. A replay was neither
-    /// generated nor charged, and a caller reconciling cost has no other way to tell which one
-    /// they got — `meta.idempotentReplayOf` is the id that actually carries the usage row, since
-    /// a replay's own id has none.
-    ///
-    /// Reported upstream as a gap in that case.
-    @Test("a streamed replay is flagged as a replay, and names the request that was charged")
-    func streamedReplayIsFlagged() async throws {
+    /// They matter because the two outcomes come from the same call site. A replay was neither
+    /// generated nor charged, and `meta.idempotentReplayOf` is the only id that carries a usage
+    /// row — a replay's own id has none — so a caller reconciling cost has nothing else to go on.
+    @Test("a streamed replay names the request that was charged, and its own id")
+    func streamedReplayNamesWhatWasCharged() async throws {
         let stubs = StubProtocol.Session()
         stubs.stubToken()
         stubs.stub(
@@ -56,7 +56,7 @@ struct IdempotencyKeyTests {
             .init(model: "qwen3-0.6b", messages: [.user("hi")]), idempotencyKey: "k")
         for try await _ in stream {}
 
-        #expect(stream.meta.idempotentReplay, "the streamed replay was not flagged")
+        // The flag itself is `stream-idempotent-replay`'s job since v23 and is not repeated here.
         #expect(stream.meta.idempotentReplayOf == "original-1")
         #expect(stream.meta.requestID == "replay-1")
     }

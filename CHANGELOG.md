@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+Corpus to **v23**, which puts the streamed replay flag into the contract. The capability this
+runner built for it a commit earlier is what reads the new assertion, so the bump was a step
+rather than work:
+
+    the stream path drops its meta -> stream-idempotent-replay: meta.idempotent_replay was false
+
+`IdempotencyKeyTests` shrank again, to the pair v23 could not reach. Not an oversight upstream:
+that case's recorded response carries only `Idempotent-Replay`, while its chat sibling also
+captured `X-Request-ID` and `X-Idempotent-Replay-Of`. Asserting those needs a new capture, not a
+new assertion — an expectation written against bytes that do not contain them would be invented.
+
+
 **Two defects the Mundus team found by reading the tag, and the guards that would have caught them.**
 
 - **The `User-Agent` announced `0.1.0` from `0.1.1`.** A literal beside the header that sends it,
