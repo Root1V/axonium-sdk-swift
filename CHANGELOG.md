@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+Corpus to **v25**, which pins that the catalog is authenticated.
+
+`request_headers_present` is a third form beside the two from v22: by name, no value, because
+`Authorization` carries each runner's own test token and comparing it would pin the fixture rather
+than the behaviour. It is an assertion added to an existing case rather than a new one — no
+recording can carry a fact about the *request*.
+
+Swift never had the defect: `models()` has always gone through the authenticated path. It is
+pinned now anyway, which is the difference between being right and being held to it:
+
+    skip Authorization on /v1/models
+      -> catalog-list: sent no Authorization header; this endpoint is authenticated like
+         every other one, whatever the guide says
+
+
 Corpus to **v23**, which puts the streamed replay flag into the contract. The capability this
 runner built for it a commit earlier is what reads the new assertion, so the bump was a step
 rather than work:
