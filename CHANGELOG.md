@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+**The documented example was the shape the platform has now said not to build.**
+
+Guide §2.7 answers the question this package raised as `A-30`: a `client_id` is the principal that
+model grants and billing rows are keyed to, so a `client_secret` inside an App Store binary is the
+integrator's identity — the one holding the grants and paying the invoice — copied onto every
+user's device. The keychain is the right place for a credential and the wrong place for that one.
+mTLS was never the answer: a certificate inside a downloadable app is a secret inside a
+downloadable app. PKCE is not either, and not on cost — per-end-user identity has nowhere to live
+in the platform's authorization model.
+
+Nothing in this package's behaviour changes. What changes is what it tells a reader to do:
+`clientSecret: secretFromKeychain` was the headline example in the README and in
+`AxoniumClient`'s own doc, and it is now the second example, for a machine the integrator
+controls. `TokenProvider` is the first — documented as the recommended path rather than as an
+escape hatch, with a worked example of a provider backed by the app's own backend.
+
+And it is worth saying why that seam pays off twice. The argument for deciding the credential
+question early was that a Swift package gaining a `SecIdentity` in v2 breaks public API in a
+binary that goes through review. With a token as the entire surface, that break cannot happen:
+nothing about how a token was obtained is this package's business.
+
+
 The catalog docs described an endpoint that no longer exists.
 
 `PRM-167` did more than close `GET /v1/models` to anonymous callers: it now returns only the

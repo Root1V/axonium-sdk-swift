@@ -27,10 +27,19 @@ public struct Timeouts: Sendable, Hashable {
 /// Everything the client needs to reach a deployment.
 ///
 /// **Configured in code, with the environment as an optional fallback and never a requirement.**
-/// The other SDKs in this family lean on `AXONIUM_*` variables because they run on servers. An
-/// app on macOS or iOS has no meaningful process environment and no `.env`: the secret comes out
-/// of the Keychain at runtime and is handed here. A configuration that could only be supplied by
-/// the environment would be unusable in the place this SDK exists for.
+/// The other SDKs in this family lean on `AXONIUM_*` variables because they run on servers. An app
+/// on macOS or iOS has no meaningful process environment and no `.env`, so everything here can be
+/// passed in Swift.
+///
+/// **In a distributed app, leave ``clientID`` and ``clientSecret`` empty and supply a
+/// ``TokenProvider``.** This doc used to say the secret comes out of the Keychain at runtime, and
+/// guide §2.7 has since answered that directly: a `client_id` is the principal that model grants
+/// and billing rows are keyed to, so that credential is the integrator's identity and a copy on
+/// every user's device is a copy of the thing that gets billed. The keychain is the right place for
+/// a credential and the wrong place for that one.
+///
+/// The credential fields are for a machine the integrator controls — a server, a CLI, a build
+/// step. Both shapes are supported and only one of them belongs in an App Store binary.
 public struct AxoniumConfiguration: Sendable {
     /// The gateway's base URL. The token endpoint lives on it too — the auth-service is no
     /// longer an address a client needs to know.
@@ -109,8 +118,10 @@ public struct AxoniumConfiguration: Sendable {
         if !hasExternalTokenProvider && (clientID.isEmpty || clientSecret.isEmpty) {
             throw AxoniumError.configuration(
                 "clientID and clientSecret are required unless a TokenProvider is supplied. "
-                    + "On Apple platforms the secret normally comes from the Keychain and is "
-                    + "passed in code; AXONIUM_CLIENT_ID and AXONIUM_CLIENT_SECRET also work.")
+                    + "In a distributed app, supply a TokenProvider instead: this credential is "
+                    + "the integrator's identity, not the user's, and the platform issues it to "
+                    + "confidential clients only (guide 2.7). On a machine you control, "
+                    + "AXONIUM_CLIENT_ID and AXONIUM_CLIENT_SECRET also work.")
         }
     }
 
