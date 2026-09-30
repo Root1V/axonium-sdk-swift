@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+The catalog docs described an endpoint that no longer exists.
+
+`PRM-167` did more than close `GET /v1/models` to anonymous callers: it now returns only the
+models the token holds `model:<id>` scope for, which makes `modelsMine()` an **alias** of it. This
+SDK's behaviour was already correct — it always authenticated — and everything it said about the
+endpoint was not. "The public catalog", "needs no token", "the honest connectivity check": none of
+the three survived.
+
+The fact worth having in the doc is one this session got wrong by inference before the guide
+stated it: **an empty list means no grants, not an empty platform.** Two different facts, only an
+operator can tell them apart, and guessing the second is how somebody concludes a deployment is
+broken when their token simply has nothing granted.
+
+And the platform now names `modelsMine()` as what belongs behind a "test connection" button,
+because it proves three things at once — the gateway answers, the credential works, and there is
+something this caller may send. `GET /health` proves that a process replied.
+
+
 Corpus to **v25**, which pins that the catalog is authenticated.
 
 `request_headers_present` is a third form beside the two from v22: by name, no value, because

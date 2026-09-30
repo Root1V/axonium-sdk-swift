@@ -103,7 +103,7 @@ token request rather than one per caller.
 | | |
 |---|---|
 | `chat` / `chatStream` | completions, and an `AsyncSequence` with cooperative cancellation |
-| `models` / `modelsMine` | the public catalog, and what this token actually holds scope for |
+| `models` / `modelsMine` | what this token may call — aliases of each other since `PRM-167`, when the catalog stopped being public. An empty list means no grants, not an empty platform |
 | `embeddings` / `images` / `rerank` | the rest of inference |
 | `usage(requestID:)` | the accounting row for one request |
 
