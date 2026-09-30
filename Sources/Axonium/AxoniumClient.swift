@@ -39,14 +39,31 @@ public final class AxoniumClient: Sendable {
 
     // MARK: - catalog
 
-    /// The public catalog. Needs no token, which makes it the honest connectivity check: it is
-    /// in the contract, and failing it means something real is wrong.
+    /// The models this token may call.
+    ///
+    /// **Not "every deployed model", and not since `PRM-167`.** This was the platform's one
+    /// public route and returned the whole catalog. It now requires a token and answers exactly
+    /// what ``modelsMine()`` answers — the two are aliases, and neither is preferable.
+    ///
+    /// **An empty list means this token holds no `model:<id>` grants, not that the platform has
+    /// no models.** Those are different facts and only an operator can tell them apart: ask for
+    /// the grant rather than concluding the deployment is empty. Access was always
+    /// deny-by-default; what changed is that discovery stopped being allow-all.
+    ///
+    /// This doc used to call it the public catalog and the honest connectivity check. Neither is
+    /// true now: the platform closed it on 2026-09-29, and ``modelsMine()`` is what belongs
+    /// behind a "test connection" button — it proves the gateway answers, the credential works,
+    /// and there is something this caller may actually send. `GET /health` proves only that a
+    /// process replied.
     public func models() async throws -> ModelList {
         let response = try await send(method: "GET", path: "/v1/models", body: nil, options: .init())
         return ModelList.decode(response.body ?? [:], meta: response.meta)
     }
 
-    /// The models this token holds `model:<id>` scope for.
+    /// The models this token may call. An alias of ``models()`` since `PRM-167`.
+    ///
+    /// Kept because it is documented and callers use it. It exists because ``models()`` used to
+    /// be the full public catalog and a token had no other way to find out what it could call.
     ///
     /// Worth calling once at startup and caching, rather than discovering access model by model
     /// through failed requests — and it is what lets a `403` say which scope is missing.
