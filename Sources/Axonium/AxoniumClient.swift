@@ -2,14 +2,31 @@ import Foundation
 
 /// A client for the Prometheus inference platform.
 ///
+/// **In a distributed app, hand it a token rather than a credential.** The platform issues
+/// credentials to confidential clients only (guide §2.7): a `client_id` is the principal that
+/// model grants and billing rows are keyed to, so a `client_secret` inside an App Store binary is
+/// the *integrator's* identity copied onto every user's device. The device keychain is the right
+/// place for a credential and the wrong place for that one, because it is not the user's.
+///
 /// ```swift
-/// let client = try AxoniumClient(configuration: .init(
-///     gatewayBaseURL: "https://gateway.example",
-///     clientID: id, clientSecret: secretFromKeychain))
+/// // The shape for an app: your backend holds the credential and returns a token.
+/// let client = try AxoniumClient(
+///     configuration: .init(gatewayBaseURL: "https://gateway.example"),
+///     tokenProvider: MyBackendTokenProvider())
 ///
 /// let answer = try await client.chat(.init(model: "qwen3-0.6b", messages: [.user("hola")]))
 /// print(answer.content ?? "")
 /// ```
+///
+/// ```swift
+/// // The shape for a server-side tool, where the credential is on a machine you control.
+/// let client = try AxoniumClient(configuration: .init(
+///     gatewayBaseURL: "https://gateway.example",
+///     clientID: id, clientSecret: secret))
+/// ```
+///
+/// ``TokenProvider`` is the whole seam, and it is why nothing about how a token was obtained can
+/// become a breaking change to this package's API later.
 ///
 /// `Sendable` and safe to share. One instance per process is the intended shape: the token is
 /// cached inside it, and a second client means a second token and a second refresh.

@@ -2,10 +2,21 @@ import Foundation
 
 /// Supplies the bearer token for every request.
 ///
+/// **This is the recommended path for a distributed app, not an escape hatch.** Guide §2.7: the
+/// platform issues credentials to confidential clients only, because a `client_id` is the
+/// principal that model grants and billing rows are keyed to. An App Store binary is a public
+/// client in RFC 8252's terms and cannot keep that secret, whatever the keystore — so the app
+/// talks to a backend the integrator runs, and that backend holds the credential and hands back a
+/// token.
+///
 /// A protocol rather than a concrete type so an app can hand the client a token it obtained some
-/// other way — a backend-for-frontend, an MDM-provisioned credential, a mock in a test — without
-/// the SDK ever seeing a client secret. That mode is the reason `clientID`/`clientSecret` are
-/// optional in ``AxoniumConfiguration``.
+/// other way — its own backend, an MDM-provisioned credential, a mock in a test — without the SDK
+/// ever seeing a client secret. That mode is why `clientID`/`clientSecret` are optional in
+/// ``AxoniumConfiguration``.
+///
+/// It is also what keeps this package's API stable: a token is the entire surface, so nothing
+/// about *how* one was obtained — a certificate identity, a device attestation, a different grant
+/// — can become a breaking change here later.
 public protocol TokenProvider: Sendable {
     /// The token to use now, obtaining or refreshing one if needed.
     func token() async throws -> String

@@ -77,10 +77,10 @@ contract it never read.
 ```swift
 import Axonium
 
-let client = try AxoniumClient(configuration: .init(
-    gatewayBaseURL: "https://gateway.example",
-    clientID: id,
-    clientSecret: secretFromKeychain))     // never hard-coded, never logged
+// Your backend holds the credential and returns a token. See "Where the credential lives".
+let client = try AxoniumClient(
+    configuration: .init(gatewayBaseURL: "https://gateway.example"),
+    tokenProvider: MyBackendTokenProvider())
 
 let answer = try await client.chat(.init(
     model: "qwen3-0.6b",
@@ -92,9 +92,38 @@ for try await chunk in try await client.chatStream(request) {
 }
 ```
 
-**Configured in code.** An app on macOS or iOS has no meaningful process environment and no
-`.env`; the secret comes out of the Keychain at runtime. `AxoniumConfiguration.fromEnvironment()`
-exists for command-line tools and is never required.
+## Where the credential lives
+
+**Not in your app.** The platform issues credentials to confidential clients only (guide §2.7). A
+`client_id` is the principal that model grants and billing rows are keyed to, so a `client_secret`
+inside an App Store binary is *your* identity — the one that holds the grants and pays the invoice
+— copied onto every user's device. The keychain is the right place for a credential; it is the
+wrong place for that one, because it is not the user's.
+
+So the app talks to a backend you run, that backend holds the credential, and ``TokenProvider`` is
+where its token arrives:
+
+```swift
+struct MyBackendTokenProvider: TokenProvider {
+    func token() async throws -> String { try await myBackend.axoniumToken() }
+    func refresh(rejected: String) async throws -> String { try await myBackend.axoniumToken(force: true) }
+    var grantedScope: [String] { get async { [] } }
+}
+```
+
+That seam is also what keeps this package's API stable: a token is the whole surface, so nothing
+about *how* one was obtained can become a breaking change here later.
+
+**On a machine you control** — a server, a CLI, a build step — pass the credential directly:
+
+```swift
+let client = try AxoniumClient(configuration: .init(
+    gatewayBaseURL: "https://gateway.example", clientID: id, clientSecret: secret))
+```
+
+**Configured in code.** An app has no meaningful process environment and no `.env`, so every
+setting can be passed in Swift. `AxoniumConfiguration.fromEnvironment()` exists for command-line
+tools and is never required.
 
 **Everything is `Sendable`** and builds under Swift 6 strict concurrency with no warnings. The
 token provider is an `actor`, so a burst of concurrent calls on an expired token produces one
