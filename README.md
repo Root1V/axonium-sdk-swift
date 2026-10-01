@@ -134,6 +134,8 @@ token request rather than one per caller.
 | `chat` / `chatStream` | completions, and an `AsyncSequence` with cooperative cancellation |
 | `models` / `modelsMine` | what this token may call — aliases of each other since `PRM-167`, when the catalog stopped being public. An empty list means no grants, not an empty platform |
 | `embeddings` / `images` / `rerank` | the rest of inference |
+| vision | an image goes in a message: `.user("¿qué es?", image: jpeg, mediaType: "image/jpeg")`. Bytes, never a link — the gateway refuses `http(s)://` as an SSRF mitigation, and `ContentPart` has no case that could express one |
+| `predict(model:body:)` | the pass-through route, for the tasks OpenAI has no shape for. Body and answer both verbatim; the answer is a `JSONValue` because one live shape is a top-level array |
 | `usage(requestID:)` | the accounting row for one request |
 
 ## What is tested today

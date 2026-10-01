@@ -201,10 +201,29 @@ public final class AxoniumClient: Sendable {
         var meta: ResponseMeta
     }
 
-    /// Sends a buffered request, retrying where the platform says retrying can help.
+    /// A response whose body is any top-level JSON, for the pass-through route.
+    struct DecodedValue: Sendable {
+        var value: JSONValue?
+        var meta: ResponseMeta
+    }
+
+    /// Sends a buffered request and narrows the body to a JSON object, which every modelled
+    /// endpoint returns.
     private func send(
         method: String, path: String, body: [String: Any]?, options: CallOptions
     ) async throws -> Decoded {
+        let raw = try await sendRaw(method: method, path: path, body: body, options: options)
+        return Decoded(body: raw.value?.objectValue, meta: raw.meta)
+    }
+
+    /// Sends a buffered request, retrying where the platform says retrying can help.
+    ///
+    /// Returns the body as any top-level JSON rather than as an object, because the pass-through
+    /// route returns whatever its engine returns and one live shape is an array. ``send`` narrows
+    /// it for the endpoints whose shape this SDK does model — one retry loop, two readings.
+    func sendRaw(
+        method: String, path: String, body: [String: Any]?, options: CallOptions
+    ) async throws -> DecodedValue {
         if let key = options.idempotencyKey, key.count > 255 {
             throw AxoniumError.invalidRequest(
                 "idempotencyKey is \(key.count) characters; the gateway accepts at most 255")
@@ -226,7 +245,7 @@ public final class AxoniumClient: Sendable {
             meta.waitedFor = waited
             meta.attempts = attempt
 
-            if raw.status < 400 { return Decoded(body: raw.body, meta: meta) }
+            if raw.status < 400 { return DecodedValue(value: raw.value, meta: meta) }
 
             let apiError = makeError(raw)
             guard

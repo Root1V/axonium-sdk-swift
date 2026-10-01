@@ -3,7 +3,12 @@ import Foundation
 /// One message in a conversation.
 public struct Message: Sendable, Hashable {
     public var role: String
-    public var content: String?
+    /// Text, or an ordered mix of text and images. See ``MessageContent``.
+    ///
+    /// This was `String?` through `0.1.x`, which made this the only SDK in the family that could
+    /// not send an image — Python, Go and Rust have all accepted either shape from the start,
+    /// because the wire does.
+    public var content: MessageContent?
     /// Set on a message answering a tool call, alongside `role: "tool"`.
     public var toolCallID: String?
     /// The tool's name, where a backend expects it beside the result.
@@ -12,8 +17,8 @@ public struct Message: Sendable, Hashable {
     public var toolCalls: [ToolCall]?
 
     public init(
-        role: String, content: String? = nil, toolCallID: String? = nil, name: String? = nil,
-        toolCalls: [ToolCall]? = nil
+        role: String, content: MessageContent? = nil, toolCallID: String? = nil,
+        name: String? = nil, toolCalls: [ToolCall]? = nil
     ) {
         self.role = role
         self.content = content
@@ -22,19 +27,27 @@ public struct Message: Sendable, Hashable {
         self.toolCalls = toolCalls
     }
 
-    public static func user(_ content: String) -> Message { Message(role: "user", content: content) }
-    public static func system(_ content: String) -> Message {
+    public static func user(_ content: MessageContent) -> Message {
+        Message(role: "user", content: content)
+    }
+    public static func system(_ content: MessageContent) -> Message {
         Message(role: "system", content: content)
     }
-    public static func assistant(_ content: String) -> Message {
+    public static func assistant(_ content: MessageContent) -> Message {
         Message(role: "assistant", content: content)
+    }
+
+    /// A user message carrying an image and the question about it, which is the whole reason
+    /// multi-part content exists.
+    public static func user(_ text: String, image: Data, mediaType: String) -> Message {
+        Message(role: "user", content: .parts([.text(text), .image(image, mediaType: mediaType)]))
     }
 
     var wireForm: [String: Any] {
         var payload: [String: Any] = ["role": role]
         // `content` is sent even when nil: an assistant turn that only called tools has no text,
         // and omitting the key entirely makes some backends reject the message.
-        payload["content"] = content ?? NSNull()
+        payload["content"] = content?.wireForm ?? NSNull()
         if let toolCallID { payload["tool_call_id"] = toolCallID }
         if let name { payload["name"] = name }
         if let toolCalls { payload["tool_calls"] = toolCalls.map(\.wireForm) }
@@ -228,6 +241,7 @@ public struct ChatRequest: Sendable {
         if messages.isEmpty {
             throw AxoniumError.invalidRequest("messages must not be empty")
         }
+        for message in messages { try message.content?.validate() }
         if let temperature, !(0...2).contains(temperature) {
             throw AxoniumError.invalidRequest("temperature must be between 0 and 2, got \(temperature)")
         }

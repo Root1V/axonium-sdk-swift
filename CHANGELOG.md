@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+### Vision, and the pass-through route
+
+Both built against a live deployment rather than against the guide, and both verified end to end
+before anything was written down — an 8×8 PNG, half red and half blue, came back described
+correctly, and the three `predict` engines answered their three different shapes.
+
+**`Message.content` is now `MessageContent`, a union of text or parts.** This is a breaking change
+and it is the right one: the wire has one field with two shapes, OpenAI and Anthropic model it
+that way, and Python, Go and Rust in this family all accept either. Swift shipped `String?` and
+was the only one of the four that could not send an image.
+
+An earlier proposal here was a second `parts` field beside `content`, with both-set rejected at
+runtime. That was worse and was chosen for the wrong reason — to avoid breaking one consumer. A
+union makes the meaningless state unrepresentable instead of validated, which is the entire
+advantage of having enums.
+
+`ExpressibleByStringLiteral` keeps `content: "hola"` exactly as it was, and a text message still
+serialises as a bare string rather than a one-element array.
+
+**Images are bytes and never a link.** `ContentPart` has no case for a URL, because the gateway
+refuses `http(s)://` as an SSRF mitigation — an API accepting one would accept something that
+always fails. Python enforces that with a validator that raises; here the type cannot express it.
+
+**`predict(model:body:)` returns a `JSONValue`, not a dictionary.** Measured: `sst2-clf` answers
+with a **top-level array**, while the other two answer with objects of different shapes. A client
+reading every body as a dictionary reports "not JSON" about valid JSON. It is deliberately not a
+`classify(text:)` typed per modality — the shape belongs to the engine, and `payloadSchema` in the
+catalog is what identifies it.
+
+`sendRaw` is the one retry loop read two ways, so the pass-through route and the modelled
+endpoints cannot drift apart in how they retry.
+
+
 **The documented example was the shape the platform has now said not to build.**
 
 Guide §2.7 answers the question this package raised as `A-30`: a `client_id` is the principal that
