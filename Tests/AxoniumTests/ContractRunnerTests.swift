@@ -524,7 +524,8 @@ struct ContractRunnerTests {
         let request = testCase["request"] as? [String: Any] ?? [:]
         let messages = (request["messages"] as? [[String: Any]] ?? []).map { raw in
             Message(
-                role: raw["role"] as? String ?? "user", content: raw["content"] as? String)
+                role: raw["role"] as? String ?? "user",
+                content: (raw["content"] as? String).map(MessageContent.text))
         }
         return ChatRequest(
             model: request["model"] as? String ?? "m",

@@ -13,6 +13,18 @@ struct RawResponse: Sendable {
         return object.mapValues(JSONValue.init)
     }
 
+    /// The body as **any** top-level JSON, not only an object.
+    ///
+    /// The pass-through `predict` route returns whatever the engine returns, and one of the three
+    /// live shapes is a top-level array. Reading every body as a dictionary would have failed on
+    /// it with "not JSON", which is both wrong and the kind of wrong that sends somebody to look
+    /// at the gateway.
+    var value: JSONValue? {
+        guard let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+        else { return nil }
+        return JSONValue(object)
+    }
+
     /// The body as `JSONSerialization` hands it over, for the error decoder.
     var rawBody: [String: Any]? {
         try? JSONSerialization.jsonObject(with: data) as? [String: Any]
