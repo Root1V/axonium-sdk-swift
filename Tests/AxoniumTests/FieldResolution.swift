@@ -16,8 +16,49 @@ func resolve(_ path: String, in value: Any) -> Any? {
     if let list = value as? ImageList { return resolve(path, in: list) }
     if let list = value as? RerankList { return resolve(path, in: list) }
     if let row = value as? UsageRow { return resolve(path, in: row) }
+    if let result = value as? PredictResult { return resolve(path, in: result) }
     if let stream = value as? ChatStream { return resolve(path, in: stream) }
     return nil
+}
+
+/// Resolves a path against a pass-through result.
+///
+/// The only type here whose payload is **not** an object: `sst2-clf` answers a top-level array, so
+/// `value.0.label` has to walk a `JSONValue` rather than a dictionary. There are no accessors to
+/// prefer over the raw body, because this SDK derives nothing from it — which is the whole point of
+/// the route.
+private func resolve(_ path: String, in result: PredictResult) -> Any? {
+    if path.hasPrefix("meta.") { return resolveMeta(String(path.dropFirst(5)), result.meta) }
+    guard path == "value" || path.hasPrefix("value.") else { return nil }
+    let rest = path == "value" ? "" : String(path.dropFirst(6))
+    return walkJSON(rest, in: result.value)
+}
+
+/// Walks a dotted path through a `JSONValue`, with integer segments indexing arrays.
+private func walkJSON(_ path: String, in value: JSONValue) -> Any? {
+    var current = value
+    if !path.isEmpty {
+        for segment in path.split(separator: ".").map(String.init) {
+            switch current {
+            case .object(let fields):
+                guard let next = fields[segment] else { return nil }
+                current = next
+            case .array(let items):
+                guard let index = Int(segment), index >= 0, index < items.count else { return nil }
+                current = items[index]
+            default:
+                return nil
+            }
+        }
+    }
+    switch current {
+    case .string(let s): return s
+    case .number(let n): return n
+    case .bool(let b): return b
+    case .null: return nil as Any?
+    case .array(let a): return a
+    case .object(let o): return o
+    }
 }
 
 /// Resolves a path against a finished stream.

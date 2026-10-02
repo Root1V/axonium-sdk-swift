@@ -2,6 +2,79 @@
 
 ## Unreleased
 
+Nothing yet.
+
+---
+
+## 0.2.0 — 2026-10-02
+
+### §2.7 moved the axis, and the answer in the previous entry was to the wrong question
+
+**Read this before the entry below it, which it partly reverses.** Guide revision `2026-10-01`
+rewrites §2.7 from "Client types — who may hold a credential" to "Credentials — whose they are, and
+who issues them", and the criterion is no longer *where the secret sits*:
+
+> **A credential identifies whoever pays for consumption.**
+
+So the shape this package spent a release talking itself out of is **supported**, for the case that
+matters to the app that asked:
+
+| Whose credential | In an App Store app? | Why |
+|---|---|---|
+| The integrator's | No | A copy on every device is a copy of the identity holding the grants and paying the invoice |
+| **The end client's own** | **Yes, Keychain included** | The principal, the grants and the bill are theirs; a leak costs them their own account |
+
+An app with a credential in it is still a public client in RFC 8252's terms. That is accepted here
+when the secret and the bill belong to the same person — the distinction the previous version did
+not draw, and the reason it reached the wrong conclusion from correct premises.
+
+Two consequences an app has to be built around, both new in §2.7 and neither a code change:
+
+- **One credential per client, not per device.** The same secret on a Mac and an iPhone is the
+  normal case, not a leak. Revocation is per client.
+- **Issuance is always a human administrator.** No registration endpoint, and none planned, because
+  issuing a credential opens a billing account. **"No credential yet" is where every new user
+  starts** — a first-class state in the app rather than an error, and the request goes to the
+  platform, not to the integrator.
+
+Corrected in all three places that stated the old rule: `AxoniumClient`'s headline doc,
+`AxoniumConfiguration`, and the README's "Where the credential lives", which is now a table because
+the answer has two rows and one of them had been written as "no".
+
+**No behaviour changed in either direction.** This package takes a credential or a `TokenProvider`
+and always did; what was wrong was only what it told a reader to do. The `TokenProvider` seam still
+pays for itself — nothing about how a token was obtained is this package's business, so none of
+these reversals can reach the public API.
+
+### The corpus replaced two of this release's own tests
+
+`Corpus` moves to manifest **v26, 48 cases**, which adds four on the pass-through route: the three
+live engine shapes and the first recorded `predict-backend-rejected`.
+
+Two hand-written tests added earlier in this same release are **gone**, replaced in the commit that
+vendored the cases rather than against a promise of one:
+
+    "a top-level array answer survives"  ->  predict-classification-answers-a-top-level-array
+    "an object answer survives too"      ->  predict-zero-shot… + predict-typed-decision…
+
+The corpus versions are strictly better: recorded wire bytes rather than bodies shortened by hand,
+and four SDKs replay them instead of one. Mutation confirms the replacement has the same teeth —
+decoding the body as a dictionary fails `predict-classification` and nothing else, the identical
+single failure the hand-written test produced.
+
+What stays in `VisionAndPredictTests` is what a corpus case cannot express: three refusals whose
+assertion is that **no request happens**, and one about what goes out rather than what comes back.
+
+Both corpus-coverage guards earned their keep on the bump: the size guard named `48 != 44`, and
+"this SDK implements every operation the manifest exercises" named `predict.create` before any field
+mismatch could bury it.
+
+### Also in this release
+
+The three sections that follow, unreleased until now: vision through `MessageContent`, the
+pass-through route, the catalog documentation fixed after `PRM-167`, the stream-retry unification,
+and `PrivacyInfo.xcprivacy`.
+
 ### Vision, and the pass-through route
 
 Both built against a live deployment rather than against the guide, and both verified end to end

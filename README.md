@@ -3,12 +3,15 @@
 The Axonium SDK for the Prometheus inference platform, for macOS, iOS, iPadOS, visionOS and
 watchOS.
 
-> **Status: M1.** The client works and replays all 44 cases of the shared contract corpus. Not
-> yet tagged, so it cannot be resolved as a package dependency — see [ROADMAP.md](ROADMAP.md)
-> for what M2 and 1.0 add.
+> **Status: `0.2.0`.** The client works and replays all 48 cases of the shared contract corpus.
+> See [ROADMAP.md](ROADMAP.md) for what 1.0 adds.
+>
+> **`0.2.0` is a breaking change from `0.1.x`**: `Message.content` is `MessageContent` rather than
+> `String?`, so a message can carry an image. `content: "hola"` is unaffected — the literal still
+> works — but anything reading `content` as a `String?` has to switch on it.
 
 ```swift
-.package(url: "https://github.com/Root1V/axonium-sdk-swift", from: "0.1.0")
+.package(url: "https://github.com/Root1V/axonium-sdk-swift", from: "0.2.0")
 ```
 
 ## Why this is a separate repository
@@ -94,14 +97,29 @@ for try await chunk in try await client.chatStream(request) {
 
 ## Where the credential lives
 
-**Not in your app.** The platform issues credentials to confidential clients only (guide §2.7). A
-`client_id` is the principal that model grants and billing rows are keyed to, so a `client_secret`
-inside an App Store binary is *your* identity — the one that holds the grants and pays the invoice
-— copied onto every user's device. The keychain is the right place for a credential; it is the
-wrong place for that one, because it is not the user's.
+**It depends on whose it is, not on where it runs.** Guide §2.7 was rewritten at revision
+`2026-10-01` and the criterion moved: a credential identifies whoever pays for consumption. Model
+grants and billing rows are keyed to a `client_id`, so a credential is an **account**, not a key.
 
-So the app talks to a backend you run, that backend holds the credential, and ``TokenProvider`` is
-where its token arrives:
+| Whose credential | In an App Store app? | How |
+|---|---|---|
+| Yours, the integrator's | **No.** A copy on every device is a copy of the identity that holds your grants and pays your invoice | `TokenProvider` against a service you run |
+| Your user's own | **Yes.** The principal, grants and bill are theirs, so a leak costs them their own account | `clientID` / `clientSecret`, Keychain included |
+
+An app with a credential in it is still a public client in RFC 8252's terms. That is accepted here
+when the secret and the bill belong to the same person.
+
+Two things that follow, and that an app has to be built around:
+
+- **One credential per client, not per device.** The same secret on their Mac and their iPhone is
+  the normal case. Revocation is per client.
+- **Issuance is always a human administrator.** There is no registration endpoint and none planned,
+  because issuing a credential opens a billing account. So **"no credential yet" is where every new
+  user starts** — a first-class state in the app, not an error, and the request goes to the platform
+  rather than to you.
+
+When the credential is yours, the app talks to a backend you run, that backend holds it, and
+`TokenProvider` is where its token arrives:
 
 ```swift
 struct MyBackendTokenProvider: TokenProvider {

@@ -31,15 +31,23 @@ public struct Timeouts: Sendable, Hashable {
 /// on macOS or iOS has no meaningful process environment and no `.env`, so everything here can be
 /// passed in Swift.
 ///
-/// **In a distributed app, leave ``clientID`` and ``clientSecret`` empty and supply a
-/// ``TokenProvider``.** This doc used to say the secret comes out of the Keychain at runtime, and
-/// guide §2.7 has since answered that directly: a `client_id` is the principal that model grants
-/// and billing rows are keyed to, so that credential is the integrator's identity and a copy on
-/// every user's device is a copy of the thing that gets billed. The keychain is the right place for
-/// a credential and the wrong place for that one.
+/// **Whether ``clientSecret`` belongs here depends on whose credential it is.** This doc has said
+/// two different things, and the second was the platform's answer to the first:
 ///
-/// The credential fields are for a machine the integrator controls — a server, a CLI, a build
-/// step. Both shapes are supported and only one of them belongs in an App Store binary.
+/// 1. Originally: the secret comes out of the Keychain at runtime.
+/// 2. Then §2.7 refused it — credentials to confidential clients only — so these fields were
+///    documented as server-only and ``TokenProvider`` as the shape for an app.
+/// 3. Now, at guide revision `2026-10-01`, §2.7 is rewritten and the axis has moved to **whose the
+///    credential is**. Both of the above were answers to the wrong question.
+///
+/// - Leave these empty and supply a ``TokenProvider`` when the credential is **yours**. A copy of
+///   it on every user's device is a copy of the identity that holds your grants and is billed.
+/// - Fill them in when the credential is **that user's own**, including from their Keychain. The
+///   principal, the grants and the bill are theirs, so the blast radius of a leak is their account.
+///
+/// An app with a credential in it is still a public client in RFC 8252's terms. That is accepted
+/// here when the secret and the bill belong to the same person, which is the distinction the
+/// previous version of this doc did not draw.
 public struct AxoniumConfiguration: Sendable {
     /// The gateway's base URL. The token endpoint lives on it too — the auth-service is no
     /// longer an address a client needs to know.

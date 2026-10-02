@@ -80,44 +80,21 @@ struct VisionAndPredictTests {
 
     // MARK: - predict
 
-    /// The response is **not** always an object, which is why the result is a `JSONValue`.
-    ///
-    /// Measured live: `sst2-clf` answers with a top-level array. A client that read every body as
-    /// a dictionary would report "not JSON" about perfectly good JSON, and send whoever read that
-    /// to look at the gateway.
-    @Test("a top-level array answer survives")
-    func topLevelArrayAnswer() async throws {
-        let stubs = StubProtocol.Session()
-        stubs.stubToken()
-        stubs.stub(
-            path: "/v1/models/sst2-clf/predict",
-            .init(
-                status: 200, headers: ["X-Request-ID": "req-1"],
-                body: Data(#"[{"label":"POSITIVE","score":0.9783}]"#.utf8)))
-
-        let result = try await client(stubs).predict(
-            model: "sst2-clf", body: .object(["inputs": .string("excelente")]))
-
-        #expect(result.value.arrayValue?.first?["label"]?.stringValue == "POSITIVE")
-        #expect(result.meta.requestID == "req-1")
-    }
-
-    @Test("an object answer survives too, undecoded")
-    func objectAnswer() async throws {
-        let stubs = StubProtocol.Session()
-        stubs.stubToken()
-        stubs.stub(
-            path: "/v1/models/von-decide/predict",
-            .init(
-                status: 200, headers: [:],
-                body: Data(#"{"labels":["a","b"],"scores":[0.8,0.2]}"#.utf8)))
-
-        let result = try await client(stubs).predict(
-            model: "von-decide", body: .object(["inputs": .string("x")]))
-
-        #expect(result.value["labels"]?.arrayValue?.count == 2)
-        #expect(result.value["scores"]?.arrayValue?.first?.doubleValue == 0.8)
-    }
+    // Two tests lived here and are gone, replaced by corpus cases in the commit that vendored
+    // them rather than against a promise of one:
+    //
+    //   "a top-level array answer survives"  -> predict-classification-answers-a-top-level-array
+    //   "an object answer survives too"      -> predict-zero-shot-scores-the-labels-it-was-given
+    //                                          predict-typed-decision-answers-several-questions-at-once
+    //
+    // The corpus versions are strictly better: their bodies are recorded wire bytes from a live
+    // deployment rather than shortened by hand here, and all four SDKs replay them instead of one.
+    // Mutation confirms the replacement catches what was caught here -- decoding the body as a
+    // dictionary fails predict-classification and nothing else, which is the same single failure
+    // the hand-written array test produced.
+    //
+    // What stays below is what a corpus case cannot express: three refusals where the assertion is
+    // that NO REQUEST HAPPENS, and one about what goes OUT rather than what comes back.
 
     @Test("the body reaches the engine verbatim")
     func bodyGoesThroughUntouched() async throws {
