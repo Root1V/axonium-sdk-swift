@@ -2,14 +2,20 @@ import Foundation
 
 /// A client for the Prometheus inference platform.
 ///
-/// **In a distributed app, hand it a token rather than a credential.** The platform issues
-/// credentials to confidential clients only (guide §2.7): a `client_id` is the principal that
-/// model grants and billing rows are keyed to, so a `client_secret` inside an App Store binary is
-/// the *integrator's* identity copied onto every user's device. The device keychain is the right
-/// place for a credential and the wrong place for that one, because it is not the user's.
+/// **Which credential it may hold depends on whose it is, not on where it runs.** Guide §2.7 was
+/// rewritten at revision `2026-10-01` and the criterion moved: a credential identifies *whoever
+/// pays for consumption*. Model grants and billing rows are keyed to a `client_id`, so a credential
+/// is an account rather than a key.
+///
+/// - **Your own credential must never ship inside your app.** A copy on every user's device is a
+///   copy of the identity that holds your grants and pays your invoice, and one leak exposes all of
+///   it. Hand this client a ``TokenProvider`` backed by a service you run.
+/// - **Your user's own credential may live on their device, Keychain included.** The principal, the
+///   grants and the bill are theirs; a leak costs them their own account and nothing else. This is
+///   the "bring your own key" shape and it is supported, not tolerated.
 ///
 /// ```swift
-/// // The shape for an app: your backend holds the credential and returns a token.
+/// // Your credential, your backend: the app never sees a secret.
 /// let client = try AxoniumClient(
 ///     configuration: .init(gatewayBaseURL: "https://gateway.example"),
 ///     tokenProvider: MyBackendTokenProvider())
@@ -19,11 +25,18 @@ import Foundation
 /// ```
 ///
 /// ```swift
-/// // The shape for a server-side tool, where the credential is on a machine you control.
+/// // The user's own credential, out of their Keychain. Also correct, and also an App Store app.
 /// let client = try AxoniumClient(configuration: .init(
 ///     gatewayBaseURL: "https://gateway.example",
-///     clientID: id, clientSecret: secret))
+///     clientID: theirID, clientSecret: theirSecret))
 /// ```
+///
+/// **One credential per client, not per device**, so the same secret on their Mac and their iPhone
+/// is the normal case rather than a leak. Revocation is per client.
+///
+/// **And credentials are issued by a human administrator, always** — there is no registration
+/// endpoint and none planned, because issuing one opens a billing account. So *no credential yet*
+/// is where every new user starts: treat it as a first-class state in the app, not an error.
 ///
 /// ``TokenProvider`` is the whole seam, and it is why nothing about how a token was obtained can
 /// become a breaking change to this package's API later.

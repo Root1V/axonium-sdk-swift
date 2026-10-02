@@ -36,12 +36,15 @@ corpus, and leaving them out would have meant a runner that skips cases. What is
 
 - `TokenClaims` surfaced on the client rather than only as a type.
 - ~~Teach the contract runner an ordered response *sequence* and the `expect.requests` count.~~
-  Done; the corpus is pinned at v21, 44 cases, all replaying.
+  Done; the corpus is pinned at v26, 48 cases, all replaying.
 - ~~Reopen a stream rejected before it begins.~~ Done — and the corpus found it. The bump to v21
   failed `stream-retried-when-rejected-before-it-begins` on the first run, which is the whole
   reason for being held to somebody else's cases rather than one's own.
 - `X-Prometheus-Ignored-Parameters`, once the four SDKs decide it together.
-- `predict(model:body:)` for the pass-through route, which no SDK implements yet.
+- ~~`predict(model:body:)` for the pass-through route, which no SDK implements yet.~~ Shipped in
+  `0.2.0`, here first and then in the other three. The corpus gained four cases for it in v26,
+  including the one that decided the return type: `sst2-clf` answers a **top-level array**, so a
+  dictionary would have failed on the first engine the platform put on the route.
 
 ## M3 — 1.0
 

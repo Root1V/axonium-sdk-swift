@@ -49,9 +49,10 @@ struct ContractRunnerTests {
                 }
                 let result = try await invoke(operation: operation, case: testCase, client: client)
                 problems += checkCounts(
-                    expect, stubs: stubs, meta: nil, id: id, path: endpoint(for: operation))
+                    expect, stubs: stubs, meta: nil, id: id,
+                    path: endpoint(for: operation, case: testCase))
                 problems += checkRequestHeaders(
-                    expect, stubs: stubs, id: id, path: endpoint(for: operation))
+                    expect, stubs: stubs, id: id, path: endpoint(for: operation, case: testCase))
                 for (path, wanted) in expect["fields"] as? [String: Any] ?? [:] {
                     let got = resolve(path, in: result)
                     if !matches(got, wanted) {
@@ -331,15 +332,27 @@ struct ContractRunnerTests {
     }
 
     /// Which path a given operation hits, so a request count knows where to look.
-    private func endpoint(for operation: String) -> String {
+    ///
+    /// `predict.create` is the only operation whose path depends on the case, because it addresses
+    /// the model through a path segment rather than a body field — which is itself part of the
+    /// contract, and is why the stub is registered under that exact path: a client that put the
+    /// model in the body would find no stub and fail rather than being answered anyway.
+    private func endpoint(for operation: String, case testCase: [String: Any] = [:]) -> String {
         switch operation {
         case "embeddings.create": return "/v1/embeddings"
         case "images.generate": return "/v1/images/generations"
         case "rerank.create": return "/v1/rerank"
         case "models.list": return "/v1/models"
         case "models.mine": return "/v1/models/mine"
+        case "predict.create": return predictPath(testCase)
         default: return "/v1/chat/completions"
         }
+    }
+
+    private func predictPath(_ testCase: [String: Any]) -> String {
+        let request = testCase["request"] as? [String: Any] ?? [:]
+        let model = request["model"] as? String ?? "m"
+        return "/v1/models/\(model)/predict"
     }
 
     private func operationName(_ testCase: [String: Any]) -> String {
@@ -359,10 +372,15 @@ struct ContractRunnerTests {
     ) {
         let stubs = StubProtocol.Session()
         stubs.stubToken()
-        for path in [
+        var paths = [
             "/v1/chat/completions", "/v1/models", "/v1/models/mine", "/v1/embeddings",
             "/v1/images/generations", "/v1/rerank",
-        ] {
+        ]
+        // Per case rather than fixed, because this one carries the model in the path.
+        if (testCase["operation"] as? String) == "predict.create" {
+            paths.append(predictPath(testCase))
+        }
+        for path in paths {
             try stubFrom(testCase, path: path, into: stubs)
         }
         let client = try AxoniumClient(
@@ -514,6 +532,12 @@ struct ContractRunnerTests {
         case "usage.retrieve":
             let request = testCase["request"] as? [String: Any] ?? [:]
             return try await client.usage(requestID: request["request_id"] as? String ?? "")
+        case "predict.create":
+            let request = testCase["request"] as? [String: Any] ?? [:]
+            let body = JSONValue(request["body"] ?? [String: Any]())
+            return try await client.predict(
+                model: request["model"] as? String ?? "m", body: body,
+                idempotencyKey: idempotencyKey(testCase))
         default:
             throw UnsupportedOperation(
                 message: "\(operation) is in the manifest and this SDK does not implement it yet")
@@ -662,9 +686,9 @@ struct CoverageTests {
             ($0["expect"] as? [String: Any])?["kind"] as? String ?? "?"
         }.mapValues(\.count)
 
-        #expect(cases.count == 44, "the manifest has \(cases.count) cases, expected 44")
-        #expect(byKind["ok"] == 14)
-        #expect(byKind["error"] == 17)
+        #expect(cases.count == 48, "the manifest has \(cases.count) cases, expected 48")
+        #expect(byKind["ok"] == 17)
+        #expect(byKind["error"] == 18)
         #expect(byKind["stream"] == 7)
         #expect(byKind["stream_error"] == 2)
         #expect(byKind["oauth_error"] == 2)
@@ -719,7 +743,7 @@ struct CoverageTests {
         let implemented: Set<String> = [
             "chat.completions.create", "chat.completions.stream", "models.list", "models.mine",
             "embeddings.create", "images.generate", "rerank.create", "usage.retrieve",
-            "token.fetch",
+            "predict.create", "token.fetch",
         ]
         let named = Set(try Corpus.cases().compactMap { $0["operation"] as? String })
         #expect(
