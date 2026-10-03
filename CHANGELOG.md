@@ -2,7 +2,18 @@
 
 ## Unreleased
 
-Nothing yet.
+Corpus at `2026-10-02 · PRM-167/173/174`, which adds two error types:
+
+- **`404 unknown-route`** → `ErrorKind.unknownRoute`
+- **`405 method-not-allowed`** → `ErrorKind.methodNotAllowed`
+
+`unknown-route` is deliberately **not** `notFound`, and the platform split them because all four
+SDKs dispatch on the suffix: `not-found` is a statement about *data* — no usage row with that id
+belonging to this client — which a caller may read as an empty result or retry. A bad URL is neither.
+
+The catalog-parity test earned its keep without being touched. Adding the two kinds against the old
+32-row catalog failed `no mapped suffix is absent from the catalog`, naming both — which is the test
+refusing to let this SDK invent a suffix that would send a caller to catch a case that never arrives.
 
 ---
 
