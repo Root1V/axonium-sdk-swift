@@ -38,6 +38,13 @@ public enum ErrorKind: Sendable, Hashable {
 
     // 404
     case notFound
+    /// No route at that URL: a mistake in the calling code rather than a fact about the caller's
+    /// data. Deliberately **not** ``notFound`` — the platform split them because all four SDKs
+    /// dispatch on the suffix, and `not-found` is about data a caller may read as an empty result
+    /// or retry. A bad URL is neither.
+    case unknownRoute
+    /// The URL exists, the verb does not. The `Allow` response header lists the ones that do.
+    case methodNotAllowed
 
     // 409
     case idempotencyKeyReuse
@@ -116,6 +123,8 @@ public enum ErrorKind: Sendable, Hashable {
         case "spend-cap-exceeded": self = .spendCapExceeded
         case "forbidden": self = .forbidden
         case "not-found": self = .notFound
+        case "unknown-route": self = .unknownRoute
+        case "method-not-allowed": self = .methodNotAllowed
         case "idempotency-key-reuse": self = .idempotencyKeyReuse
         case "idempotency-in-progress": self = .idempotencyInProgress
         case "idempotency-response-not-retained": self = .idempotencyResponseNotRetained
