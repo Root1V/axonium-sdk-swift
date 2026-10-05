@@ -3,15 +3,19 @@
 The Axonium SDK for the Prometheus inference platform, for macOS, iOS, iPadOS, visionOS and
 watchOS.
 
-> **Status: `0.2.0`.** The client works and replays all 48 cases of the shared contract corpus.
-> See [ROADMAP.md](ROADMAP.md) for what 1.0 adds.
+> **Status: `0.3.0`.** The client works and replays every case of the shared contract corpus. The
+> count lives in the corpus manifest, which this repository vendors as a submodule, so it is not
+> repeated here to go stale. See [ROADMAP.md](ROADMAP.md) for what 1.0 adds.
 >
-> **`0.2.0` is a breaking change from `0.1.x`**: `Message.content` is `MessageContent` rather than
-> `String?`, so a message can carry an image. `content: "hola"` is unaffected — the literal still
-> works — but anything reading `content` as a `String?` has to switch on it.
+> **`0.3.0` adds two cases to `ErrorKind`**, which a `switch` covering every case will no longer
+> compile against. Swift gives a source package no way to say *this will grow* — `@frozen` and its
+> absence only mean something to a module built with library evolution — so the catalogue's growth
+> is a break here every time, and the defence is a `default` arm. `0.2.0` was itself breaking from
+> `0.1.x`: `Message.content` is `MessageContent` rather than `String?`, so a message can carry an
+> image.
 
 ```swift
-.package(url: "https://github.com/Root1V/axonium-sdk-swift", from: "0.2.0")
+.package(url: "https://github.com/Root1V/axonium-sdk-swift", from: "0.3.0")
 ```
 
 ## Why this is a separate repository

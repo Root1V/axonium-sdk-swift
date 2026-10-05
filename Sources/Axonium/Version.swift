@@ -15,7 +15,7 @@ import Foundation
 /// Behind, not different. Between releases this is legitimately ahead of the newest tag — the
 /// commit that raises it comes before the commit that tags it — and a check that is red by design
 /// gets ignored, which is worse than no check.
-public let axoniumVersion = "0.2.0"
+public let axoniumVersion = "0.3.0"
 
 /// The `User-Agent` this SDK sends.
 let userAgent = "axonium-swift/\(axoniumVersion)"
