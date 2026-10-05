@@ -21,6 +21,19 @@ public struct Model: Sendable, Hashable {
     /// one modality can want different shapes.
     ///
     /// `nil` means "we cannot state a shape", not "there is no field". Treat it as do-not-guess.
+    ///
+    /// `tei.predict.v1` is the first case where that is not hypothetical. On `zero_shot`,
+    /// `hf-inference.zero-shot-classification.v1` answers `{sequence, labels, scores}` normalised
+    /// across the candidate labels *you* supplied, while `tei.predict.v1` answers scores across the
+    /// **model's own** classes and has no notion of candidate labels at all. Both sum to 1, over
+    /// different things, so dispatching on `modality` reads one as the other.
+    ///
+    /// It also carries a trap, measured against a live server by the platform team: a batch is
+    /// ALWAYS a list of lists. `inputs: ["premise", "hypothesis"]` is ONE PAIR rather than two
+    /// texts and answers once in silence, and three or more flat strings is a `422`. So the obvious
+    /// "send my N texts as an array" is the one form that quietly returns a single wrong answer;
+    /// `texts.map { [$0] }` is the form that batches. The per-request cap is per instance (64 on
+    /// the reference deployment).
     public var payloadSchema: String?
     public var raw: [String: JSONValue] = [:]
 

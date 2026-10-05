@@ -85,6 +85,16 @@ public enum ErrorKind: Sendable, Hashable {
     case backendUnavailable
     case rateLimitingUnavailable
     case usageStoreUnavailable
+    /// A reranker running on an engine whose rerank request shape the gateway has not recorded.
+    /// Only on `POST /v1/rerank`.
+    ///
+    /// **The one 5xx in the catalog that is not retryable**, which is why it is named rather than
+    /// left to fall through to ``otherServerError`` -- that fallback *is* retryable, so without
+    /// this case the SDK would retry through its whole attempt budget and report a timeout for a
+    /// condition that was never going to clear. The gateway records each engine's dialect
+    /// deliberately, because a reranker on a new engine is not llama.cpp's shape just because the
+    /// last one was. An operator registers it; waiting does nothing.
+    case rerankDialectUnknown
     /// The gateway could not reach the auth-service to issue a token. The only problem+json a
     /// token request can produce -- every other token outcome uses the RFC 6749 shape -- and that
     /// distinction is what makes it safe to retry where an OAuth2 failure never is.
@@ -137,6 +147,7 @@ public enum ErrorKind: Sendable, Hashable {
         case "backend-unavailable": self = .backendUnavailable
         case "rate-limiting-unavailable": self = .rateLimitingUnavailable
         case "usage-store-unavailable": self = .usageStoreUnavailable
+        case "rerank-dialect-unknown": self = .rerankDialectUnknown
         case "upstream-unavailable": self = .tokenEndpointUnavailable
         case "not-configured": self = .tokenEndpointNotConfigured
         default:
@@ -162,6 +173,9 @@ public enum ErrorKind: Sendable, Hashable {
             .idempotencyInProgress, .tokenEndpointUnavailable, .otherServerError:
             return true
         // modelNotLoaded is a 5xx and is not retryable: it needs an operator, not patience.
+        // rerankDialectUnknown likewise, and it is the one where falling through to the default
+        // is load-bearing rather than incidental: otherServerError IS retryable, so an unnamed
+        // suffix would have been retried to exhaustion.
         // tokenEndpointNotConfigured shares a status with tokenEndpointUnavailable for the same
         // reason. predictBackendRejected is absent because its answer is not a property of the
         // name; see ``APIError/isRetryable``.

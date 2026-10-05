@@ -699,7 +699,7 @@ struct CoverageTests {
 
         let catalogued =
             (try Corpus.errorCatalog()["gateway_errors"] as? [[String: Any]] ?? []).count
-        #expect(catalogued == 34, "the catalog has \(catalogued) errors, expected 34")
+        #expect(catalogued == 35, "the catalog has \(catalogued) errors, expected 35")
     }
 
     /// Nothing a streamed case asserts may be silently unread.

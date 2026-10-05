@@ -6,7 +6,37 @@ Nothing yet.
 
 ---
 
-## 0.3.0 — 2026-10-04
+## 0.3.0 — 2026-10-05
+
+Corpus at `2026-10-04 · PRM-182/183/184`, which brings a new engine, a new error, and a trap.
+
+**`503 rerank-dialect-unknown` → `ErrorKind.rerankDialectUnknown`.** A reranker running on an engine
+whose rerank request shape the gateway has not recorded. **The one 5xx in the catalog that is not
+retryable**, and that is the whole reason it needed naming rather than falling through: `isRetryable`
+answers `true` for `otherServerError`, so until today this error would have been retried through the
+whole attempt budget and reported as a timeout for a condition that was never going to clear. The
+fall-through to `default` in `isRetryable` is load-bearing here rather than incidental, and now says
+so.
+
+**`tei.predict.v1`, and the case `payloadSchema` was waiting for.** A second engine serves
+`zero_shot`, and the two disagree: `hf-inference.zero-shot-classification.v1` normalises across *the
+caller's* candidate labels, `tei.predict.v1` across the **model's own** classes with no notion of
+candidate labels at all. Both sum to 1, over different things. Dispatching on `modality` reads one as
+the other — the exact failure this type exists to prevent, with no case to prove it until now. No
+code changed; the field is a pass-through string and this SDK never enumerated its values, which is
+the doc comment above it being right.
+
+**The batch trap**, documented on `payloadSchema` because that is where a reader is standing when it
+matters: a batch is *always* a list of lists, a flat array of two strings is read as one pair and
+answers **once, in silence**, and three or more is a `422`.
+
+**The rate-limit scope list is gone.** Five SDKs kept five hand-written lists of scope names and they
+had already diverged — one said `chat` where the header says `chat_completions`, a name a caller
+would key a map by and never match. This one said `chat_completions`, `embeddings`, `rerank`,
+`predict`, `default`. The guide now contradicts itself about the set, so all five stop enumerating
+and read it from the header. The fixed 60-second wall-clock window takes its place, because that one
+a caller has to design against.
+
 
 **Minor rather than patch, because two added `ErrorKind` cases break an exhaustive `switch`.** Swift
 offers a source package nothing to say *this will grow* with: `@frozen` and its absence are

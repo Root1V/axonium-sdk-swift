@@ -2,10 +2,19 @@ import Foundation
 
 /// The rate-limit budget as of one response.
 ///
-/// `scope` names *which* budget the numbers describe. There is more than one -- `chat_completions`,
-/// `embeddings`, `rerank`, `predict` and `default` -- so a single "last seen" slot would end up
-/// holding whichever endpoint answered last while looking entirely plausible. Key it before you
-/// cache it.
+/// `scope` names *which* budget the numbers describe, and is an **open set read from the header**
+/// rather than a list kept here. Five SDKs kept five different hand-written lists and they had
+/// already diverged -- one said `chat` where the header says `chat_completions` -- and the guide
+/// contradicts itself about the set, so the header is the only answer that cannot go stale.
+///
+/// There is more than one budget, which is the part that matters: a single "last seen" slot would
+/// end up holding whichever endpoint answered last while looking entirely plausible. Key it before
+/// you cache it.
+///
+/// The budget is a **fixed 60-second bucket aligned to the wall clock**, not a sliding window: the
+/// whole allowance returns at second 0 of each minute, which is what ``resetRequests`` timestamps.
+/// A burst can straddle a boundary and pass where the same burst seconds earlier is refused, so
+/// pace against ``remainingRequests`` rather than against an assumed rate.
 public struct RateLimitSnapshot: Sendable, Hashable {
     public var scope: String?
     public var limitRequests: Int?
