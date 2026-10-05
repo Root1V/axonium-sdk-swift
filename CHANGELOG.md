@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+Nothing yet.
+
+---
+
+## 0.3.0 — 2026-10-04
+
+**Minor rather than patch, because two added `ErrorKind` cases break an exhaustive `switch`.** Swift
+offers a source package nothing to say *this will grow* with: `@frozen` and its absence are
+instructions to a module built with library evolution, which a SwiftPM source dependency is not. So
+every row the platform adds to its catalogue is a compile error for a caller who covered all the
+cases, and the only defence is theirs to write — a `default` arm. Rust reached the same release for
+the same reason today and could at least mark the type `#[non_exhaustive]` so it was the last time;
+this package cannot, and says so in the README rather than leaving it to be discovered.
+
+**The corpus submodule moves from v26 to v27, 49 cases**, and the replay passed on the first run. The
+new case is a second in-band stream failure whose payload is an **object** rather than the literal
+string `stream interrupted` — authored in the monorepo because mutating a runner to compare that exact
+text left all 48 cases green, so the corpus could not tell *detect the key* from *compare the string*.
+This SDK had always detected the key; what changed is that it is now pinned rather than lucky.
+
+What the bump did cost is the one test that writes the counts down — 48 → 49 and `stream_error` 2 → 3
+— and that is the test doing its job. **It is also the only place in five SDKs where a shrinking
+corpus would be noticed**: Python, Go and Rust replay whatever the manifest holds and report a pass
+either way. Swift and TypeScript pin the total; the other three do not.
+
 Corpus at `2026-10-02 · PRM-167/173/174`, which adds two error types:
 
 - **`404 unknown-route`** → `ErrorKind.unknownRoute`

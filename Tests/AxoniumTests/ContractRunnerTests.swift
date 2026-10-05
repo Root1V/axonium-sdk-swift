@@ -686,11 +686,14 @@ struct CoverageTests {
             ($0["expect"] as? [String: Any])?["kind"] as? String ?? "?"
         }.mapValues(\.count)
 
-        #expect(cases.count == 48, "the manifest has \(cases.count) cases, expected 48")
+        #expect(cases.count == 49, "the manifest has \(cases.count) cases, expected 49")
         #expect(byKind["ok"] == 17)
         #expect(byKind["error"] == 18)
         #expect(byKind["stream"] == 7)
-        #expect(byKind["stream_error"] == 2)
+        // v27's second in-band failure, whose payload is an object rather than the literal string
+        // `stream interrupted`. The replay passed on the first run against the bumped corpus and only
+        // these written-down numbers moved, which is the whole point of writing them down.
+        #expect(byKind["stream_error"] == 3)
         #expect(byKind["oauth_error"] == 2)
         #expect(byKind["auth_transport_error"] == 2)
 
