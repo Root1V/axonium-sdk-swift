@@ -239,3 +239,41 @@ struct VersionAndDocsTests {
             .first { !$0.isEmpty }
     }
 }
+
+/// Credentials are the only setting a caller must supply.
+///
+/// The shape Python, Go and Rust have had since `AXO-83` collapsed auth onto the gateway, and that
+/// this package did not: `gatewayBaseURL` was a required **first positional** parameter through
+/// `0.3.0`, so the SDK whose whole audience is app developers demanded the most setup, and the
+/// published documentation's "smallest thing that works" example did not compile.
+@Suite("Required settings")
+struct RequiredSettingsTests {
+
+    @Test("credentials alone are enough to construct a client")
+    func credentialsAlone() throws {
+        let client = try AxoniumClient(
+            configuration: AxoniumConfiguration(clientID: "i", clientSecret: "s"))
+        #expect(client.configuration.gatewayBaseURL == defaultGatewayBaseURL)
+
+        // The default being a LOOPBACK address is what makes defaulting safe rather than reckless:
+        // getting it wrong reaches the developer's own machine -- normally a refused connection --
+        // and cannot quietly send a credential somewhere real.
+        #expect(defaultGatewayBaseURL.hasPrefix("http://127.0.0.1"))
+    }
+
+    @Test("an explicit address still wins, and an empty one is still refused")
+    func explicitWinsAndEmptyIsRefused() throws {
+        let explicit = try AxoniumClient(
+            configuration: AxoniumConfiguration(
+                gatewayBaseURL: "https://explicit.test", clientID: "i", clientSecret: "s"))
+        #expect(explicit.configuration.gatewayBaseURL == "https://explicit.test")
+
+        // Empty is a mistake with an answer -- somebody passed "" or exported an empty variable --
+        // rather than an omission with a default, so it stays an error.
+        #expect(throws: AxoniumError.self) {
+            try AxoniumClient(
+                configuration: AxoniumConfiguration(
+                    gatewayBaseURL: "", clientID: "i", clientSecret: "s"))
+        }
+    }
+}

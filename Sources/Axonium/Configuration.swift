@@ -48,6 +48,21 @@ public struct Timeouts: Sendable, Hashable {
 /// An app with a credential in it is still a public client in RFC 8252's terms. That is accepted
 /// here when the secret and the bill belong to the same person, which is the distinction the
 /// previous version of this doc did not draw.
+/// The address this SDK talks to when nothing says otherwise.
+///
+/// **Credentials are the only setting a caller must supply**, which is the shape Python, Go and Rust
+/// have had since `AXO-83` collapsed auth onto the gateway. This package shipped `0.1.0` through
+/// `0.3.0` with `gatewayBaseURL` as a required, *first positional* parameter — so the SDK whose
+/// whole audience is app developers was the one that demanded the most setup, and the published
+/// documentation showed an example that cannot compile.
+///
+/// The default is a **loopback** address, which is what makes it safe: getting it wrong reaches the
+/// developer's own machine — normally a refused connection, and clear enough — and cannot quietly
+/// send a credential somewhere real. Set it, or `AXONIUM_GATEWAY_BASE_URL` with
+/// ``AxoniumConfiguration/fromEnvironment(gatewayBaseURL:clientID:clientSecret:scope:)``, for any
+/// deployment that is not this one.
+public let defaultGatewayBaseURL = "http://127.0.0.1:8020"
+
 public struct AxoniumConfiguration: Sendable {
     /// The gateway's base URL. The token endpoint lives on it too — the auth-service is no
     /// longer an address a client needs to know.
@@ -69,7 +84,7 @@ public struct AxoniumConfiguration: Sendable {
     public var sessionConfiguration: URLSessionConfiguration?
 
     public init(
-        gatewayBaseURL: String,
+        gatewayBaseURL: String = defaultGatewayBaseURL,
         clientID: String = "",
         clientSecret: String = "",
         scope: String = "",
@@ -99,7 +114,8 @@ public struct AxoniumConfiguration: Sendable {
     ) -> AxoniumConfiguration {
         let env = ProcessInfo.processInfo.environment
         return AxoniumConfiguration(
-            gatewayBaseURL: gatewayBaseURL ?? env["AXONIUM_GATEWAY_BASE_URL"] ?? "",
+            gatewayBaseURL: gatewayBaseURL ?? env["AXONIUM_GATEWAY_BASE_URL"]
+                ?? defaultGatewayBaseURL,
             clientID: clientID ?? env["AXONIUM_CLIENT_ID"] ?? "",
             clientSecret: clientSecret ?? env["AXONIUM_CLIENT_SECRET"] ?? "",
             scope: scope ?? env["AXONIUM_SCOPE"] ?? ""
@@ -109,11 +125,14 @@ public struct AxoniumConfiguration: Sendable {
     /// Fails loudly at construction rather than as a confusing request error later, naming the
     /// setting and how to supply it.
     func validate(hasExternalTokenProvider: Bool) throws {
+        // Empty rather than defaulted is still refused: it means a caller passed "" or exported an
+        // empty environment variable, which is a mistake with an answer, not an omission with a
+        // default. `fromEnvironment` falls back to the default before reaching here.
         let trimmed = gatewayBaseURL.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty {
             throw AxoniumError.configuration(
-                "gatewayBaseURL is required. Pass it to AxoniumConfiguration, or set "
-                    + "AXONIUM_GATEWAY_BASE_URL and use AxoniumConfiguration.fromEnvironment().")
+                "gatewayBaseURL was supplied empty. Omit it to use \(defaultGatewayBaseURL), pass "
+                    + "an http(s) URL, or set AXONIUM_GATEWAY_BASE_URL.")
         }
         guard let url = URL(string: trimmed), let scheme = url.scheme,
             ["http", "https"].contains(scheme.lowercased()), url.host != nil

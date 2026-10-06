@@ -3,6 +3,11 @@
 The Axonium SDK for the Prometheus inference platform, for macOS, iOS, iPadOS, visionOS and
 watchOS.
 
+📖 **Documentation: https://root1v.github.io/axonium-sdk/** — concepts, every call, failure and
+retries, configuration, composed operations and testing, with every example in Python, Go, Rust,
+Swift and TypeScript.
+También [en español](https://root1v.github.io/axonium-sdk/es/).
+
 > **Status: `0.3.0`.** The client works and replays every case of the shared contract corpus. The
 > count lives in the corpus manifest, which this repository vendors as a submodule, so it is not
 > repeated here to go stale. See [ROADMAP.md](ROADMAP.md) for what 1.0 adds.

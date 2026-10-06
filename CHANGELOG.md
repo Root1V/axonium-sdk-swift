@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+Nothing yet.
+
+---
+
+## 0.3.1 — 2026-10-06
+
+**`gatewayBaseURL` is optional now**, so credentials are the only setting a caller must supply —
+the shape Python, Go and Rust have had since `AXO-83`. It was a required **first positional**
+parameter through `0.3.0`, which meant the SDK whose entire audience is app developers demanded the
+most setup, and the documentation site's own *smallest thing that works* example would not have
+compiled.
+
+`defaultGatewayBaseURL` is exported. It is a **loopback** address, and that is what makes defaulting
+safe rather than reckless: getting it wrong reaches the developer's own machine — normally a refused
+connection — and can never quietly send a credential somewhere real. Passing an empty string is
+still an error, because that is a mistake with an answer rather than an omission with a default.
+
+**The README links to the documentation**, which no published front page in any of the five did —
+and Swift has no registry, so its GitHub page *is* the landing page a SwiftPM user reaches. Guarded
+by a test, alongside the one that checks the site's Swift examples name types this package has.
+
+The documentation is now also **in Spanish**: <https://root1v.github.io/axonium-sdk/es/>.
+
 **The site's Swift examples are now checked against this package.** The documentation in the
 monorepo shows every example in five languages; four of those are verifiable from there because
 those SDKs live in that repository. **Swift was not**, so its tabs were the one set of examples

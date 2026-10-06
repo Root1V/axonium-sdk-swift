@@ -78,6 +78,22 @@ struct VendoredDocsTests {
             ))
     }
 
+    /// What a reader lands on has to have a route to the guide.
+    ///
+    /// Swift has no package registry, so its GitHub README *is* the landing page a SwiftPM user
+    /// reaches. Measured 2026-10-06: it had no link to the documentation site, and neither did the
+    /// four READMEs in the monorepo — five published front pages, zero routes to the guide. That
+    /// repository has the mirror of this test for its own four.
+    @Test("the README a SwiftPM user lands on links to the documentation")
+    func readmeLinksToTheDocumentation() throws {
+        let site = "https://root1v.github.io/axonium-sdk/"
+        let readme = try String(
+            contentsOf: repositoryRoot().appendingPathComponent("README.md"), encoding: .utf8)
+        #expect(
+            readme.contains(site),
+            Comment(rawValue: "README.md does not link to \(site), which is the only guide there is"))
+    }
+
     // MARK: - reading
 
     private func documentationPages() throws -> [URL] {
