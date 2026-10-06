@@ -246,6 +246,21 @@ public struct ChatRequest: Sendable {
     ///
     /// This doc used to point at a typed `chat(_:as:)` layer as though it existed. It never did.
     public var responseFormat: JSONValue?
+    /// Variables llama.cpp hands to the model's own chat template, forwarded as an opaque mapping.
+    ///
+    /// **The keys belong to each model's template, not to the gateway**, so nothing validates them
+    /// and the useful set differs per model: `enable_thinking` for the Qwen3.6 family,
+    /// `reasoning_effort` for gpt-oss. A key the template does not read is ignored by the template,
+    /// silently, and nothing can tell you that — check the model card.
+    ///
+    /// It is how a reasoning model's thinking is turned off, and that is not a micro-optimisation:
+    /// measured on the platform, the same question answered in **215 tokens and 6.91 s** without it
+    /// and **16 tokens and 0.71 s** with `["enable_thinking": false]`.
+    ///
+    /// `reasoning_effort` goes **inside** this mapping. At the top level it does nothing at all, and
+    /// the platform keeps it outside the accepted set on purpose so it keeps appearing in
+    /// `X-Prometheus-Ignored-Parameters` rather than being quietly accepted and quietly dropped.
+    public var chatTemplateKwargs: JSONValue?
     /// Ask for the chosen token's own probability, returned as ``Choice/logprobs``.
     ///
     /// The point is an agent deciding when to escalate to a person rather than act on a guess.
@@ -326,6 +341,7 @@ public struct ChatRequest: Sendable {
         if let tools { payload["tools"] = tools.map(\.wireForm) }
         if let toolChoice { payload["tool_choice"] = toolChoice.wireForm }
         if let responseFormat { payload["response_format"] = responseFormat.wireForm }
+        if let chatTemplateKwargs { payload["chat_template_kwargs"] = chatTemplateKwargs.wireForm }
         if let logprobs { payload["logprobs"] = logprobs }
         if let topLogprobs { payload["top_logprobs"] = topLogprobs }
         for (key, value) in extraFields { payload[key] = value.wireForm }

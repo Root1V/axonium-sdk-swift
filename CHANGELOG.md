@@ -6,6 +6,26 @@ Nothing yet.
 
 ---
 
+## 0.3.2 — 2026-10-06
+
+Corpus at `2026-10-06b · PRM-195/196/197`.
+
+**`chatTemplateKwargs` on ``ChatRequest``.** The variables llama.cpp hands to the model's own chat
+template, and how a reasoning model's thinking is turned off. The platform's measurement is the
+argument: the same question answered in **215 tokens and 6.91 s** without it, **16 tokens and 0.71 s**
+with `enable_thinking: false`.
+
+The keys belong to each model's template rather than to the gateway, so the mapping is forwarded
+unexamined and the useful set differs per model — `enable_thinking` for the Qwen3.6 family,
+`reasoning_effort` for gpt-oss. **`reasoning_effort` at the top level does nothing**, measured, and
+the platform keeps it outside the accepted set on purpose so it keeps appearing in
+`X-Prometheus-Ignored-Parameters`. It goes inside the mapping.
+
+A zod 4 tuple's boolean `items` is normalised by the gateway now (`PRM-197`), so a caller sends the
+schema as it comes rather than widening the tuple and throwing away its per-position types.
+
+---
+
 ## 0.3.1 — 2026-10-06
 
 **`gatewayBaseURL` is optional now**, so credentials are the only setting a caller must supply —
