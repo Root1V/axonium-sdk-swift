@@ -2,7 +2,21 @@
 
 ## Unreleased
 
-Nothing yet.
+**The site's Swift examples are now checked against this package.** The documentation in the
+monorepo shows every example in five languages; four of those are verifiable from there because
+those SDKs live in that repository. **Swift was not**, so its tabs were the one set of examples
+nothing verified — a renamed type would have gone on being documented, correctly formatted and
+wrong, for as long as nobody tried it.
+
+`VendoredDocsTests` reads the same pages through the corpus submodule, which vendors the whole
+repository and therefore `docs/` along with `spec/`. No copy, and no hand-kept list of Swift names
+over there pretending to be checked. Mutation-tested by renaming `AxoniumConfiguration` in a page
+and watching it fail by name.
+
+It also carries the two distinctions that keep a guard like this honest: a type the **example**
+declares is the reader's and not ours, so those are collected from the block rather than listed as
+exceptions; and the test fails if it finds **no** Swift block at all, because a site that stopped
+showing Swift would otherwise make it pass by iterating nothing.
 
 ---
 
