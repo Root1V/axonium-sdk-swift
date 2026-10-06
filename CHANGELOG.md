@@ -22,6 +22,29 @@ showing Swift would otherwise make it pass by iterating nothing.
 
 ## 0.3.0 — 2026-10-05
 
+Corpus at `2026-10-05a · PRM-187/188`.
+
+**`logprobs` and `topLogprobs` on ``ChatRequest``, with the answer at ``Choice/logprobs``.** How
+confident the model was, so an agent can escalate to a person instead of acting on a guess.
+
+**`logprob` is a natural logarithm**, which is the whole reason ``TokenLogprob/probability`` exists:
+`-0.00054` is about 99.95% and `-7.6` is about 0.05%. Read as a probability it looks like a number
+near zero meaning *unlikely*, and nothing about the mistake is loud. `nil` rather than `0` when the
+backend sent no `logprob` — a token it said nothing about is a different fact from one it said was
+impossible.
+
+**`topLogprobs` without `logprobs` is refused in ``validate()``**, not after a round trip. The rule
+is the engine's and the gateway enforces it before forwarding; `logprobs: false` beside it is refused
+too, because an SDK checking only for *absence* would have sent that one.
+
+**`rawScores` on ``RerankRequest``.** Declined last release because it was announced in a channel
+message and absent from §3.6 of the contract; the platform added it and said the procedure was the
+right call. The logit instead of the probability, because a reranker's probabilities saturate near
+1.0 and a saturated one cannot be calibrated.
+
+No corpus case covers any of this yet, so the tests in `LogprobsTests` are what hold it.
+
+
 Corpus at `2026-10-04 · PRM-182/183/184`, which brings a new engine, a new error, and a trap.
 
 **`503 rerank-dialect-unknown` → `ErrorKind.rerankDialectUnknown`.** A reranker running on an engine

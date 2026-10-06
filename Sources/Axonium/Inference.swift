@@ -185,12 +185,26 @@ public struct RerankRequest: Sendable {
     public var query: String
     public var documents: [String]
     public var topN: Int?
+    /// Return each `relevanceScore` as the model's raw **logit** instead of a probability.
+    ///
+    /// A reranker's probabilities saturate near 1.0 — 0.99 was measured for a document only loosely
+    /// related to the query — and a saturated probability cannot be calibrated while the logit
+    /// behind it can.
+    ///
+    /// **Not every engine has it**, and that is safe: where it does not the request still succeeds
+    /// and the field comes back named in `X-Prometheus-Ignored-Parameters`. Send it
+    /// unconditionally; being dropped is discoverable rather than silent.
+    public var rawScores: Bool?
 
-    public init(model: String, query: String, documents: [String], topN: Int? = nil) {
+    public init(
+        model: String, query: String, documents: [String], topN: Int? = nil,
+        rawScores: Bool? = nil
+    ) {
         self.model = model
         self.query = query
         self.documents = documents
         self.topN = topN
+        self.rawScores = rawScores
     }
 
     func validate() throws {
@@ -202,6 +216,7 @@ public struct RerankRequest: Sendable {
     var wireForm: [String: Any] {
         var payload: [String: Any] = ["model": model, "query": query, "documents": documents]
         if let topN { payload["top_n"] = topN }
+        if let rawScores { payload["raw_scores"] = rawScores }
         return payload
     }
 }

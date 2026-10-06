@@ -139,3 +139,49 @@ struct VisionAndPredictTests {
         }
     }
 }
+
+/// The contract case `PRM-187` introduced, plus the number a caller is most likely to misread.
+@Suite("Logprobs")
+struct LogprobsTests {
+
+    /// The rule is the **engine's** — llama.cpp answers *"top_logprobs requires logprobs to be set
+    /// to true"* — and the gateway enforces it before forwarding, so the refusal would arrive as
+    /// problem+json. Refusing here is the difference between learning it at the call site and
+    /// learning it after a round trip. No recorded corpus case covers it, so this is the only thing
+    /// holding the rule in this SDK.
+    @Test("top_logprobs without logprobs is refused before the wire")
+    func topLogprobsRequiresLogprobs() throws {
+        var alone = ChatRequest(model: "m", messages: [.user("x")])
+        alone.topLogprobs = 3
+        #expect(throws: AxoniumError.self) { try alone.validate() }
+
+        // `logprobs: false` is present and wrong — an SDK checking only for ABSENCE would send it.
+        var explicitlyOff = ChatRequest(model: "m", messages: [.user("x")])
+        explicitlyOff.logprobs = false
+        explicitlyOff.topLogprobs = 3
+        #expect(throws: AxoniumError.self) { try explicitlyOff.validate() }
+
+        // The asymmetry is the point: logprobs on its own is a complete request.
+        var alright = ChatRequest(model: "m", messages: [.user("x")])
+        alright.logprobs = true
+        try alright.validate()
+        #expect(alright.wireForm(stream: false)["logprobs"] as? Bool == true)
+    }
+
+    /// `-0.00054` is ~99.95%, not ~0. Read as a probability it looks like a number near zero
+    /// meaning "unlikely", and nothing about the mistake is loud.
+    @Test("probability is exp of the logprob, and nil rather than zero when absent")
+    func probabilityReadsTheNaturalLog() {
+        let token = TokenLogprob.from(
+            JSONValue.object([
+                "token": .string("yes"),
+                "logprob": .number(-0.00054),
+                "top_logprobs": .array([.object(["token": .string("no"), "logprob": .number(-7.6)])]),
+            ]))
+        #expect((token.probability ?? 0) > 0.999)
+        #expect((token.topLogprobs.first?.probability ?? 1) < 0.001)
+
+        // A token the backend said nothing about is not one it said was impossible.
+        #expect(TokenLogprob.from(JSONValue.object(["token": .string("!")])).probability == nil)
+    }
+}

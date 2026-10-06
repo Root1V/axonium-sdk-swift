@@ -114,6 +114,37 @@ public struct Choice: Sendable, Hashable {
     /// to hang, and so nothing puts the reasoning in front of a user who asked for an answer.
     public var reasoningContent: String?
     public var toolCalls: [ToolCall] = []
+    /// Per-token probabilities, present only when the request asked **and** the engine has them.
+    ///
+    /// On an engine that does not, the response simply carries no `logprobs` key — `nil` here is
+    /// that absence, which is a different fact from an empty list.
+    public var logprobs: [TokenLogprob]?
+}
+
+/// One generated token and how likely the model thought it was.
+///
+/// `logprob` is a **natural logarithm**, which is the part worth saying out loud: `-0.00054` is
+/// about 99.95% and `-7.6` is about 0.05%. Read as a probability it looks like a number near zero
+/// meaning "unlikely", and the mistake is silent — so ``probability`` exists.
+public struct TokenLogprob: Sendable, Hashable {
+    public var token: String?
+    public var logprob: Double?
+    /// The alternatives at this position, best first. Empty unless `topLogprobs` was asked for.
+    public var topLogprobs: [TokenLogprob] = []
+
+    /// `exp(logprob)`, or `nil` when the backend sent no `logprob`.
+    ///
+    /// `nil` rather than `0`: a token the backend said nothing about is a different fact from one
+    /// it said was impossible, and a caller thresholding on confidence has to tell them apart.
+    public var probability: Double? { logprob.map(Foundation.exp) }
+
+    static func from(_ value: JSONValue) -> TokenLogprob {
+        var token = TokenLogprob()
+        token.token = value["token"]?.stringValue
+        token.logprob = value["logprob"]?.doubleValue
+        token.topLogprobs = (value["top_logprobs"]?.arrayValue ?? []).map(TokenLogprob.from)
+        return token
+    }
 }
 
 /// A non-streamed chat completion.
@@ -153,6 +184,11 @@ public struct ChatCompletion: Sendable, Hashable {
             choice.content = message?["content"]?.stringValue
             choice.reasoningContent = message?["reasoning_content"]?.stringValue
             choice.toolCalls = (message?["tool_calls"]?.arrayValue ?? []).compactMap(ToolCall.from)
+            if let entries = entry["logprobs"]?["content"]?.arrayValue {
+                // An empty `content` is still an answer: the request asked and the engine replied
+                // with nothing for this generation, which is not the key being absent.
+                choice.logprobs = entries.map(TokenLogprob.from)
+            }
             completion.choices.append(choice)
         }
         return completion
@@ -210,6 +246,16 @@ public struct ChatRequest: Sendable {
     ///
     /// This doc used to point at a typed `chat(_:as:)` layer as though it existed. It never did.
     public var responseFormat: JSONValue?
+    /// Ask for the chosen token's own probability, returned as ``Choice/logprobs``.
+    ///
+    /// The point is an agent deciding when to escalate to a person rather than act on a guess.
+    public var logprobs: Bool?
+    /// The `N` most likely alternatives at each position, 0 to 20.
+    ///
+    /// **Requires ``logprobs`` set to `true`.** Sending it alone is a `422` the gateway raises
+    /// before the engine sees it, and ``validate()`` refuses it here: the call site is a better
+    /// place to learn that than a round trip is.
+    public var topLogprobs: Int?
     /// Extra fields to send that this SDK does not model.
     ///
     /// The gateway accepts an allowlisted subset of the OpenAI fields and **silently drops** the
@@ -220,7 +266,8 @@ public struct ChatRequest: Sendable {
     public init(
         model: String, messages: [Message], temperature: Double? = nil, topP: Double? = nil,
         maxTokens: Int? = nil, stop: [String]? = nil, tools: [JSONValue]? = nil,
-        toolChoice: JSONValue? = nil, responseFormat: JSONValue? = nil
+        toolChoice: JSONValue? = nil, responseFormat: JSONValue? = nil,
+        logprobs: Bool? = nil, topLogprobs: Int? = nil
     ) {
         self.model = model
         self.messages = messages
@@ -231,6 +278,8 @@ public struct ChatRequest: Sendable {
         self.tools = tools
         self.toolChoice = toolChoice
         self.responseFormat = responseFormat
+        self.logprobs = logprobs
+        self.topLogprobs = topLogprobs
     }
 
     /// Catches what can be caught before a round trip is spent on it.
@@ -247,6 +296,17 @@ public struct ChatRequest: Sendable {
         }
         if let topP, !(topP > 0 && topP <= 1) {
             throw AxoniumError.invalidRequest("top_p must be in (0, 1], got \(topP)")
+        }
+        if let topLogprobs, logprobs != true {
+            // The rule is the engine's -- llama.cpp answers "top_logprobs requires logprobs to be
+            // set to true" -- and the gateway enforces it before forwarding, so the refusal would
+            // arrive as problem+json. Refusing here costs nothing and fails at the call site.
+            _ = topLogprobs
+            throw AxoniumError.invalidRequest("top_logprobs requires logprobs: true")
+        }
+        if let topLogprobs, !(0...20).contains(topLogprobs) {
+            throw AxoniumError.invalidRequest(
+                "top_logprobs must be in [0, 20], got \(topLogprobs)")
         }
         if let maxTokens, maxTokens <= 0 {
             throw AxoniumError.invalidRequest("max_tokens must be positive, got \(maxTokens)")
@@ -266,6 +326,8 @@ public struct ChatRequest: Sendable {
         if let tools { payload["tools"] = tools.map(\.wireForm) }
         if let toolChoice { payload["tool_choice"] = toolChoice.wireForm }
         if let responseFormat { payload["response_format"] = responseFormat.wireForm }
+        if let logprobs { payload["logprobs"] = logprobs }
+        if let topLogprobs { payload["top_logprobs"] = topLogprobs }
         for (key, value) in extraFields { payload[key] = value.wireForm }
         return payload
     }
