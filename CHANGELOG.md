@@ -6,6 +6,27 @@ Nothing yet.
 
 ---
 
+## 0.3.3 — 2026-10-08
+
+**`ErrorKind.idempotencyKeyReuse` had no documentation, and the obvious reading of it is the one
+that costs money.**
+
+Veritium measured on 2026-10-08 that the gateway fingerprints its own parsed request model
+**including defaults**, not the bytes a client sent, so `PRM-235` adding two optional fields
+invalidated every idempotency key stored before that deploy — and a client resending a
+byte-identical request got the `409`. The contract's own remedy, *resend the original request
+unchanged*, is exactly what fails, and the other one is expensive: minting a fresh key when the body
+did not change buys a **second billable generation** for work the first request may already have
+finished.
+
+Both causes and the cost are now on the case. No SDK retries this error or recovers from it with a
+new key, deliberately: in the genuine-misuse case that would double-bill in silence.
+
+The monorepo carries the same correction in four SDKs, the shared error catalog and both languages
+of the documentation site.
+
+---
+
 ## 0.3.2 — 2026-10-06
 
 Corpus at `2026-10-06b · PRM-195/196/197`.
