@@ -47,6 +47,17 @@ public enum ErrorKind: Sendable, Hashable {
     case methodNotAllowed
 
     // 409
+    /// The gateway's fingerprint for this key does not match the one it stored.
+    ///
+    /// Usually the key was sent with a different request — the fingerprint covers the path as well
+    /// as the payload. But it also happens with a byte-identical request: the fingerprint is taken
+    /// over the *gateway's* parsed request model including its defaults, not over what the client
+    /// sent, so an additive change to that model invalidates every key stored before it. Measured
+    /// by Veritium on 2026-10-08, after `PRM-235` added two optional fields.
+    ///
+    /// So do **not** mint a fresh key reflexively. If the body genuinely did not change, a new key
+    /// buys a second billable generation for work the first request may already have finished.
+    /// Never retried, and deliberately never auto-recovered with a new key.
     case idempotencyKeyReuse
     case idempotencyInProgress
     case idempotencyResponseNotRetained
