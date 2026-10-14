@@ -15,16 +15,40 @@ public struct Message: Sendable, Hashable {
     public var name: String?
     /// Tool calls the assistant asked for, carried back verbatim in the next turn.
     public var toolCalls: [ToolCall]?
+    /// A reasoning model's own chain of thought, **sent back** on an assistant turn you continue
+    /// from.
+    ///
+    /// Give it back whenever a response gave it to you. It is not politeness: llama.cpp measured
+    /// **7 failed turns out of 120** with the reasoning withheld against **0 of 120** with it
+    /// returned, and closed the issue as not fixable in the parser — a reasoning model asked to
+    /// continue from its own tool call, without its analysis channel, emits malformed headers that
+    /// lose the whole turn. On models that do not use Harmony it is not an error at all; it is
+    /// quietly worse answers, which is harder to notice and worse to diagnose.
+    ///
+    /// **Until `0.3.4` this package could not send it at all.** `wireForm` built the payload field
+    /// by field and there was no field and no escape hatch, so a Swift caller running a tool loop
+    /// on a reasoning model had no way to return what the model had just told them — the same
+    /// defect Prometheus found in their own gateway, reproduced in an SDK. `ChatCompletion` had
+    /// exposed `reasoningContent` since `0.2.0`: the field came in and could not go back out, which
+    /// breaks nothing visible and is exactly why nobody noticed.
+    ///
+    /// **Omitted from the wire when nil; never sent as `""`.** Absent and empty are different
+    /// assertions, and the second claims the model thought about nothing.
+    ///
+    /// It does **not** substitute for ``content`` or ``toolCalls``: a turn carrying only reasoning
+    /// has no valid wire form and the gateway answers `400`.
+    public var reasoningContent: String?
 
     public init(
         role: String, content: MessageContent? = nil, toolCallID: String? = nil,
-        name: String? = nil, toolCalls: [ToolCall]? = nil
+        name: String? = nil, toolCalls: [ToolCall]? = nil, reasoningContent: String? = nil
     ) {
         self.role = role
         self.content = content
         self.toolCallID = toolCallID
         self.name = name
         self.toolCalls = toolCalls
+        self.reasoningContent = reasoningContent
     }
 
     public static func user(_ content: MessageContent) -> Message {
@@ -51,6 +75,9 @@ public struct Message: Sendable, Hashable {
         if let toolCallID { payload["tool_call_id"] = toolCallID }
         if let name { payload["name"] = name }
         if let toolCalls { payload["tool_calls"] = toolCalls.map(\.wireForm) }
+        // Omitted when nil rather than sent as "", because absent and empty are different
+        // assertions and the second one claims the model thought about nothing.
+        if let reasoningContent { payload["reasoning_content"] = reasoningContent }
         return payload
     }
 }

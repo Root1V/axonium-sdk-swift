@@ -6,6 +6,47 @@ Nothing yet.
 
 ---
 
+## 0.3.4 — 2026-10-14
+
+**This package could not send a reasoning model its own reasoning back.** `Message.reasoningContent`
+is new, and `wireForm` carries it.
+
+Prometheus found their gateway **deleting `reasoning_content` from every message of every client**
+and asked the three frameworks whether that field survives their own serialization. Measured across
+the five SDKs, the answer was four yes and one no, and this was the no: `wireForm` built the payload
+field by field with no field for it and no escape hatch, while `ChatCompletion` had exposed
+`reasoningContent` since `0.2.0`. **The field came in and could not go back out** — the gateway's own
+defect, reproduced here.
+
+**It is not cosmetic.** llama.cpp issue #27720 is closed as not fixable in the parser, and the thread
+measures the cost: **7 failed turns out of 120** with the reasoning withheld against **0 of 120** with
+it returned. A reasoning model asked to continue from its own tool call, without its analysis
+channel, emits malformed headers that lose the whole turn. On models that do not use Harmony it is
+not an error at all — it is quietly worse answers, which is harder to notice and worse to diagnose.
+
+So: give it back whenever a response gave it to you.
+
+```swift
+let first = try await client.chat(request)
+var next = request
+next.messages.append(
+    Message(role: "assistant", toolCalls: first.toolCalls,
+            reasoningContent: first.reasoningContent))
+```
+
+**Omitted from the wire when nil, never sent as `""`.** Absent and empty are different assertions, and
+the second claims the model thought about nothing. Aeon and Synaptum fixed this same field in the same
+week and both wrote down that rule.
+
+**And the hole was never the field.** Every team that hit this had tests asserting what *arrived* and
+none asserting what was *sent back*; a field that enters and does not leave breaks nothing visible.
+`ReasoningReturnsTests` asserts the direction nobody was asserting, and the negative control is
+measured: restoring the `0.3.3` behaviour fails it.
+
+Also carries the corrected documentation for `ErrorKind.idempotencyKeyReuse` from `0.3.3`.
+
+---
+
 ## 0.3.3 — 2026-10-08
 
 **`ErrorKind.idempotencyKeyReuse` had no documentation, and the obvious reading of it is the one
